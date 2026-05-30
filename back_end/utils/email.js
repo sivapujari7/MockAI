@@ -7,7 +7,7 @@ const sendEmail = async (to, subject, htmlContent) => {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      sender: { name: 'MockAI', email: 'ab8705001@smtp-brevo.com' },
+      sender: { name: 'MockAI', email: 'siva9154ss@gmail.com' },
       to: [{ email: to }],
       subject: subject,
       htmlContent: htmlContent,
