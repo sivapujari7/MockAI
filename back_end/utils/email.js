@@ -42,7 +42,7 @@ const getClientUrl = () => {
     return `https://${process.env.VERCEL_URL.replace(/\/+$/, '')}`;
   }
 
-  return process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 5000}`;
+return `http://localhost:${process.env.PORT || 5000}`;
 };
 
 const getVerificationUrl = (token) => `${getClientUrl()}/verify-email?token=${token}`;
