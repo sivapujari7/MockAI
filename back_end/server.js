@@ -75,7 +75,7 @@ app.get('/api/health', (req, res) => {
 
 // ── API Routes
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/interviews', require('./routes/Interviews'));
+app.use('/api/interviews', require('./routes/interviews'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 
 // ── 404 handler

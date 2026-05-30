@@ -7,7 +7,7 @@ const {
   getInterviews,
   getInterview,
   deleteInterview,
-} = require('../controllers/InterviewController');
+} = require('../controllers/interviewController');
 const { protect } = require('../middleware/auth');
 const { validate, interviewRules } = require('../middleware/validators');
 
