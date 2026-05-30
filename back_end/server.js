@@ -13,7 +13,7 @@ connectDB().catch((error) => {
 });
 
 const app = express();
-
+app.set('trust proxy', 1);
 // The current frontend uses inline handlers/styles, so keep CSP off for now.
 app.use(helmet({
   contentSecurityPolicy: false,
