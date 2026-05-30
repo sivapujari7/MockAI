@@ -1,17 +1,24 @@
-// REPLACE WITH THIS:
-const SibApiV3Sdk = require('@getbrevo/brevo');
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-apiInstance.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
-
 const sendEmail = async (to, subject, htmlContent) => {
-  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-  sendSmtpEmail.sender = { name: 'MockAI', email: 'ab8705001@smtp-brevo.com' };
-  sendSmtpEmail.to = [{ email: to }];
-  sendSmtpEmail.subject = subject;
-  sendSmtpEmail.htmlContent = htmlContent;
-  await apiInstance.sendTransacEmail(sendSmtpEmail);
-};
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'MockAI', email: 'ab8705001@smtp-brevo.com' },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: htmlContent,
+    }),
+  });
 
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Brevo API error: ${error}`);
+  }
+};
 // ── Get frontend URL
 const getClientUrl = () => {
   const configuredUrl = process.env.CLIENT_URL;
