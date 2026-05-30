@@ -20,7 +20,7 @@
     if (configuredBase) return normalizeApiBase(configuredBase);
     if (isLocalPage()) return LOCAL_API_BASE;
 
-    return `${window.location.origin}/api`;
+   return `https://mockai-0b23.onrender.com/api`;
   }
 
   const API_BASE = getConfiguredApiBase();
