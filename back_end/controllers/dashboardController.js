@@ -1,4 +1,4 @@
-const Interview = require('../models/Interview');
+const Interview = require('../models/interview');
 const User = require('../models/User');
 
 // ────────────────────────────────────────────
