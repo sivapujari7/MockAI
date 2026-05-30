@@ -1,3 +1,5 @@
+const { generateInterviewResponse } =
+  require("../services/aiService");
 const Interview = require('../models/interview');
 const User = require('../models/User');
 const { sendInterviewCompleteEmail } = require('../utils/email');
@@ -183,8 +185,15 @@ exports.sendMessage = async (req, res, next) => {
       'Interesting. Can you quantify the impact of your actions?',
       'What would you do differently if you faced this again?',
     ];
-    const aiReply = followUps[Math.floor(Math.random() * followUps.length)];
-    interview.messages.push({ role: 'ai', content: aiReply });
+ const aiReply =
+  await generateInterviewResponse(
+    interview.jobRole,
+    message
+  );
+  interview.messages.push({
+  role: "ai",
+  content: aiReply
+});
 
     await interview.save();
 
