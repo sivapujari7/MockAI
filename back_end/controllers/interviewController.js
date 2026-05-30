@@ -82,7 +82,10 @@ const generateFeedback = (userMessage) => {
   const improvements = !hasNumbers ? ['Add specific metrics and numbers'] : [];
   if (!hasSTAR) improvements.push('Use the STAR framework for behavioral answers');
 
+  const overall = Math.round((confidence + communication + technical) / 3);
+
   return {
+    overallScore: overall,
     confidenceScore: confidence,
     communicationScore: communication,
     technicalScore: technical,

@@ -743,6 +743,98 @@ footer {
 .footer-legal a:hover { color: var(--text-muted); }
 
 /* =============================================
+   AUTH MODAL
+============================================= */
+.auth-modal {
+  position: fixed; inset: 0; z-index: 500;
+  display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(5,8,18,0.74); backdrop-filter: blur(18px);
+}
+.auth-modal.open { display: flex; }
+.auth-dialog {
+  width: min(460px, 100%);
+  background: rgba(13,20,40,0.98);
+  border: 1px solid rgba(108,99,255,0.28);
+  border-radius: 18px;
+  padding: 30px;
+  position: relative;
+  box-shadow: 0 28px 90px rgba(0,0,0,0.45);
+}
+.auth-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 34px; height: 34px; border-radius: 9px;
+  background: rgba(255,255,255,0.05); color: var(--text-muted);
+  border: 1px solid var(--card-border);
+}
+.auth-kicker {
+  color: var(--secondary); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 11px; font-weight: 700; margin-bottom: 8px;
+}
+.auth-dialog h3 { font-size: 28px; margin-bottom: 8px; }
+.auth-dialog p { color: var(--text-muted); font-size: 14px; margin-bottom: 22px; }
+.auth-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--card-border);
+  border-radius: 12px; padding: 6px; margin-bottom: 18px;
+}
+.auth-tab {
+  height: 40px; border-radius: 9px; background: transparent;
+  color: var(--text-muted); font-weight: 700;
+}
+.auth-tab.active {
+  color: white; background: linear-gradient(135deg, var(--primary), var(--accent));
+  box-shadow: 0 8px 24px rgba(108,99,255,0.28);
+}
+.auth-form { display: none; flex-direction: column; gap: 12px; }
+.auth-form.active { display: flex; }
+.auth-form label {
+  display: flex; flex-direction: column; gap: 7px;
+  color: rgba(240,242,255,0.74); font-size: 13px; font-weight: 600;
+}
+.auth-form input {
+  height: 44px; border-radius: 10px; border: 1px solid var(--card-border);
+  background: rgba(255,255,255,0.05); color: var(--text);
+  padding: 0 13px; font: inherit;
+}
+.auth-form input:focus {
+  outline: none; border-color: rgba(108,99,255,0.65);
+  box-shadow: 0 0 0 3px rgba(108,99,255,0.12);
+}
+.auth-submit {
+  margin-top: 6px; height: 46px; border-radius: 11px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white; font-weight: 800;
+  box-shadow: 0 10px 30px rgba(108,99,255,0.32);
+}
+.auth-submit:disabled { opacity: 0.72; cursor: wait; }
+.verification-fallback {
+  margin-top: 16px; padding: 14px; border-radius: 12px;
+  border: 1px solid rgba(255,181,71,0.35);
+  background: rgba(255,181,71,0.08);
+}
+.verification-fallback p {
+  margin: 0 0 10px; font-size: 13px; color: rgba(240,242,255,0.76);
+}
+.verification-fallback a,
+.verification-fallback button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 36px; padding: 0 12px; border-radius: 9px;
+  font-size: 13px; font-weight: 800; margin-right: 8px;
+}
+.verification-fallback a {
+  color: white; background: linear-gradient(135deg, var(--primary), var(--accent));
+}
+.verification-fallback button {
+  color: var(--text); background: rgba(255,255,255,0.05);
+  border: 1px solid var(--card-border);
+}
+.mini-spinner {
+  width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* =============================================
    MOBILE NAV OVERLAY
 ============================================= */
 .mobile-nav {

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const {
+  getVerificationUrl,
   sendVerificationEmail,
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -32,6 +33,15 @@ const sendTokenResponse = (user, statusCode, res, message = 'Success') => {
   res.status(statusCode).json({ success: true, message, token, user: userData });
 };
 
+const canReturnVerificationLink = (req) => {
+  const host = req.hostname;
+  return (
+    process.env.ALLOW_VERIFICATION_LINK_FALLBACK === 'true' ||
+    host === 'localhost' ||
+    host === '127.0.0.1'
+  );
+};
+
 // ────────────────────────────────────────────
 // @route   POST /api/auth/register
 // @access  Public
@@ -42,6 +52,31 @@ exports.register = async (req, res, next) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        const token = existingUser.generateVerificationToken();
+        await existingUser.save({ validateBeforeSave: false });
+
+        let emailSent = true;
+        try {
+          await sendVerificationEmail(email, existingUser.name, token);
+        } catch (emailError) {
+          emailSent = false;
+          console.error('Verification email failed:', emailError.message);
+        }
+
+        return res.status(200).json({
+          success: true,
+          emailSent,
+          accountExists: true,
+          ...(emailSent || !canReturnVerificationLink(req) ? {} : {
+            verificationUrl: getVerificationUrl(token),
+          }),
+          message: emailSent
+            ? `Account already exists but is not verified. We've sent a new verification email to ${email}.`
+            : 'Account already exists but is not verified. Use the verification link shown below for local testing.',
+        });
+      }
+
       return res.status(409).json({
         success: false,
         message: 'An account with this email already exists.',
@@ -53,11 +88,24 @@ exports.register = async (req, res, next) => {
     // Generate + send verification email
     const token = user.generateVerificationToken();
     await user.save({ validateBeforeSave: false });
-    await sendVerificationEmail(email, name, token);
+
+    let emailSent = true;
+    try {
+      await sendVerificationEmail(email, name, token);
+    } catch (emailError) {
+      emailSent = false;
+      console.error('Verification email failed:', emailError.message);
+    }
 
     res.status(201).json({
       success: true,
-      message: `Account created! We've sent a verification email to ${email}. Please verify to continue.`,
+      emailSent,
+      ...(emailSent || !canReturnVerificationLink(req) ? {} : {
+        verificationUrl: getVerificationUrl(token),
+      }),
+      message: emailSent
+        ? `Account created! We've sent a verification email to ${email}. Please verify to continue.`
+        : 'Account created, but email sending is not configured. Use the verification link shown below for local testing.',
     });
   } catch (error) {
     next(error);
@@ -92,8 +140,11 @@ exports.verifyEmail = async (req, res, next) => {
     user.emailVerificationExpires = undefined;
     await user.save({ validateBeforeSave: false });
 
-    // Send welcome email
-    await sendWelcomeEmail(user.email, user.name);
+    try {
+      await sendWelcomeEmail(user.email, user.name);
+    } catch (emailError) {
+      console.error('Welcome email failed:', emailError.message);
+    }
 
     sendTokenResponse(user, 200, res, 'Email verified successfully! Welcome to MockAI 🎉');
   } catch (error) {
@@ -148,9 +199,22 @@ exports.resendVerification = async (req, res, next) => {
 
     const token = user.generateVerificationToken();
     await user.save({ validateBeforeSave: false });
-    await sendVerificationEmail(email, user.name, token);
+    try {
+      await sendVerificationEmail(email, user.name, token);
+    } catch (emailError) {
+      console.error('Verification resend failed:', emailError.message);
+      const canUseFallback = canReturnVerificationLink(req);
+      return res.status(canUseFallback ? 200 : 502).json({
+        success: canUseFallback,
+        emailSent: false,
+        ...(canUseFallback ? { verificationUrl: getVerificationUrl(token) } : {}),
+        message: canUseFallback
+          ? 'Email sending is not configured. Use the verification link shown below for local testing.'
+          : 'Could not send verification email. Check EMAIL_USER and EMAIL_PASS.',
+      });
+    }
 
-    res.json({ success: true, message: 'Verification email resent! Check your inbox.' });
+    res.json({ success: true, emailSent: true, message: 'Verification email resent! Check your inbox.' });
   } catch (error) {
     next(error);
   }

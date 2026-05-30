@@ -18,6 +18,18 @@ transporter.verify((error) => {
 });
 
 // ── Base HTML wrapper
+const getClientUrl = () => {
+  const configuredUrl = process.env.CLIENT_URL;
+
+  if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
+    return configuredUrl.replace(/\/+$/, '');
+  }
+
+  return process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 5000}`;
+};
+
+const getVerificationUrl = (token) => `${getClientUrl()}/verify-email?token=${token}`;
+
 const emailWrapper = (content) => `
 <!DOCTYPE html>
 <html>
@@ -54,7 +66,7 @@ const emailWrapper = (content) => `
 
 // ── Send verification email
 const sendVerificationEmail = async (email, name, token) => {
-  const verifyUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
+  const verifyUrl = getVerificationUrl(token);
   const html = emailWrapper(`
     <p>Hi <strong>${name}</strong> 👋</p>
     <p>Welcome to <strong>MockAI</strong>! You're one step away from acing your interviews. Please verify your email address to activate your account.</p>
@@ -72,7 +84,7 @@ const sendVerificationEmail = async (email, name, token) => {
 
 // ── Send password reset email
 const sendPasswordResetEmail = async (email, name, token) => {
-  const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
+  const resetUrl = `${getClientUrl()}/reset-password?token=${token}`;
   const html = emailWrapper(`
     <p>Hi <strong>${name}</strong>,</p>
     <p>We received a request to reset your MockAI password. Click the button below to set a new one. This link is valid for <strong>1 hour</strong>.</p>
@@ -95,7 +107,7 @@ const sendWelcomeEmail = async (email, name) => {
     <p>Your email is verified and your MockAI account is fully activated! You're all set to start practicing and landing your dream job.</p>
     <p><strong>Here's what to do next:</strong></p>
     <p>📄 Upload your resume for an ATS score<br>🎯 Select your target job role<br>🤖 Start your first AI mock interview</p>
-    <a class="btn" href="${process.env.CLIENT_URL}">🚀 Go to Dashboard</a>
+    <a class="btn" href="${getClientUrl()}">🚀 Go to Dashboard</a>
     <p style="font-size:13px;color:rgba(240,242,255,0.4);">Good luck! The MockAI team is rooting for you.</p>
   `);
 
@@ -117,7 +129,7 @@ const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
       <span>${scores.overall}%</span>
     </div>
     <p>📊 Confidence: <strong>${scores.confidence}%</strong> &nbsp;|&nbsp; 💬 Communication: <strong>${scores.communication}%</strong> &nbsp;|&nbsp; 💻 Technical: <strong>${scores.technical}%</strong></p>
-    <a class="btn" href="${process.env.CLIENT_URL}/dashboard">View Full Report →</a>
+    <a class="btn" href="${getClientUrl()}/dashboard">View Full Report →</a>
     <p style="font-size:13px;color:rgba(240,242,255,0.4);">Keep practicing — consistency is the key to success!</p>
   `);
 
@@ -130,6 +142,7 @@ const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
 };
 
 module.exports = {
+  getVerificationUrl,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,

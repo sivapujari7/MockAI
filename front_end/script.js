@@ -62,6 +62,7 @@ const aiResponses = [
   "Well articulated! You covered the key points. As a follow-up: how did this experience shape how you approach similar challenges today? Connecting past experiences to your current thinking shows maturity.",
 ];
 let msgCount = 0;
+let activeInterviewId = null;
 const tips = [
   ["Quantify your achievements with specific numbers and metrics for stronger impact.", "Use the STAR method — Situation, Task, Action, Result — for structured answers.", "Maintain a confident tone; avoid filler words like 'um' and 'like'."],
   ["Lead with the outcome first, then explain how you got there — top-down structure is powerful.", "Include your individual contribution clearly; don't hide behind 'we'.", "End with a reflection on what you learned or would do differently."],
@@ -95,12 +96,60 @@ function updateScores() {
   document.getElementById('tip3').textContent = tipSet[2];
 }
 
-function sendMessage() {
+function notify(message, type = 'info') {
+  if (typeof showToast === 'function') showToast(message, type);
+  else console.log(`${type}: ${message}`);
+}
+
+function renderInterviewMessages(interview) {
+  const messages = document.getElementById('demoMessages');
+  if (!messages || !interview?.messages?.length) return;
+
+  messages.innerHTML = '';
+  interview.messages.forEach((message) => {
+    addMessage(message.content.replace(/\*\*/g, ''), message.role === 'user');
+  });
+}
+
+function applyBackendFeedback(feedback) {
+  if (!feedback) return;
+
+  const confidence = feedback.confidenceScore || 0;
+  const communication = feedback.communicationScore || 0;
+  const technical = feedback.technicalScore || 0;
+
+  document.getElementById('confScore').textContent = `${confidence}%`;
+  document.getElementById('commScore').textContent = `${communication}%`;
+  document.getElementById('techScore').textContent = `${technical}%`;
+  document.getElementById('confBar').style.width = `${confidence}%`;
+  document.getElementById('commBar').style.width = `${communication}%`;
+  document.getElementById('techBar').style.width = `${technical}%`;
+
+  const feedbackTips = feedback.tips || [];
+  document.getElementById('tip1').textContent = feedbackTips[0] || feedback.summary || 'Keep the answer structured and specific.';
+  document.getElementById('tip2').textContent = feedbackTips[1] || 'Add measurable outcomes where possible.';
+  document.getElementById('tip3').textContent = feedbackTips[2] || 'Close with what you learned from the experience.';
+}
+
+async function sendMessage() {
   const input = document.getElementById('demoInput');
   const text = input.value.trim();
   if (!text) return;
   addMessage(text, true);
   input.value = '';
+
+  if (activeInterviewId && typeof interviewMessage === 'function') {
+    try {
+      const data = await interviewMessage(activeInterviewId, text);
+      applyBackendFeedback(data.feedback);
+      addMessage(data.aiMessage, false);
+      return;
+    } catch (error) {
+      notify(error.message, 'error');
+      activeInterviewId = null;
+    }
+  }
+
   updateScores();
   setTimeout(() => {
     const response = aiResponses[msgCount % aiResponses.length];
@@ -224,3 +273,252 @@ document.querySelectorAll('a[href^="#"]').forEach(a => {
     if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
   });
 });
+
+function createAuthModal() {
+  if (document.getElementById('authModal')) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'authModal';
+  modal.className = 'auth-modal';
+  modal.innerHTML = `
+    <div class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button class="auth-close" type="button" aria-label="Close">x</button>
+      <div class="auth-kicker">MockAI Account</div>
+      <h3 id="authTitle">Sign in</h3>
+      <p id="authSub">Continue your interview practice with saved progress and backend feedback.</p>
+
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" type="button" data-auth-tab="login">Sign In</button>
+        <button class="auth-tab" type="button" data-auth-tab="register">Register</button>
+      </div>
+
+      <form class="auth-form active" id="loginForm">
+        <label>Email<input type="email" name="email" autocomplete="email" required></label>
+        <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="auth-submit" type="submit">Sign In</button>
+      </form>
+
+      <form class="auth-form" id="registerForm">
+        <label>Name<input type="text" name="name" autocomplete="name" required></label>
+        <label>Email<input type="email" name="email" autocomplete="email" required></label>
+        <label>Password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label>
+        <label>College<input type="text" name="college" autocomplete="organization"></label>
+        <label>Target Role<input type="text" name="targetRole" placeholder="Software Engineer"></label>
+        <button class="auth-submit" type="submit">Create Account</button>
+      </form>
+      <div class="verification-fallback" id="verificationFallback" hidden></div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal || event.target.classList.contains('auth-close')) closeAuthModal();
+  });
+
+  modal.querySelectorAll('[data-auth-tab]').forEach((tab) => {
+    tab.addEventListener('click', () => switchAuthMode(tab.dataset.authTab));
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', handleLoginSubmit);
+  document.getElementById('registerForm').addEventListener('submit', handleRegisterSubmit);
+}
+
+function switchAuthMode(mode) {
+  const isRegister = mode === 'register';
+  const title = document.getElementById('authTitle');
+  const sub = document.getElementById('authSub');
+
+  document.querySelectorAll('.auth-tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.authTab === mode);
+  });
+  document.getElementById('loginForm').classList.toggle('active', !isRegister);
+  document.getElementById('registerForm').classList.toggle('active', isRegister);
+
+  title.textContent = isRegister ? 'Create account' : 'Sign in';
+  sub.textContent = isRegister
+    ? 'Create your account, verify your email, then sign in to start backend interviews.'
+    : 'Continue your interview practice with saved progress and backend feedback.';
+
+  clearVerificationFallback();
+}
+
+function openAuthModal(mode = 'login') {
+  createAuthModal();
+  switchAuthMode(mode);
+  document.getElementById('authModal').classList.add('open');
+}
+
+function closeAuthModal() {
+  document.getElementById('authModal')?.classList.remove('open');
+}
+
+function clearVerificationFallback() {
+  const box = document.getElementById('verificationFallback');
+  if (!box) return;
+
+  box.hidden = true;
+  box.innerHTML = '';
+}
+
+function showVerificationFallback(url) {
+  const box = document.getElementById('verificationFallback');
+  if (!box || !url) return;
+
+  const text = document.createElement('p');
+  text.textContent = 'Email could not be sent from this local setup. Use this verification link:';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.textContent = 'Verify my account';
+  link.target = '_self';
+
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.textContent = 'Copy Link';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify('Verification link copied.', 'success');
+    } catch {
+      notify(url, 'info');
+    }
+  });
+
+  box.innerHTML = '';
+  box.append(text, link, copyButton);
+  box.hidden = false;
+}
+
+async function handleLoginSubmit(event) {
+  event.preventDefault();
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  const form = new FormData(event.currentTarget);
+
+  setLoading(submit, true);
+  try {
+    await authLogin(form.get('email'), form.get('password'));
+    closeAuthModal();
+    updateAuthButtons();
+    notify('Signed in successfully. You can start a backend interview now.', 'success');
+  } catch (error) {
+    notify(error.message, 'error');
+  } finally {
+    setLoading(submit, false);
+  }
+}
+
+async function handleRegisterSubmit(event) {
+  event.preventDefault();
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  const form = new FormData(event.currentTarget);
+
+  setLoading(submit, true);
+  try {
+    const data = await authRegister(
+      form.get('name'),
+      form.get('email'),
+      form.get('password'),
+      form.get('college'),
+      form.get('targetRole')
+    );
+    switchAuthMode('login');
+    if (data.verificationUrl) {
+      showVerificationFallback(data.verificationUrl);
+      notify('Account created. Use the verification link shown in the dialog.', 'warning');
+    } else {
+      notify(data.message || 'Account created. Check your email to verify before signing in.', 'success');
+    }
+  } catch (error) {
+    notify(error.message, 'error');
+  } finally {
+    setLoading(submit, false);
+  }
+}
+
+async function startBackendInterview(event) {
+  event?.preventDefault();
+
+  if (typeof isLoggedIn !== 'function' || !isLoggedIn()) {
+    openAuthModal('login');
+    notify('Sign in first, then start a saved backend interview.', 'info');
+    return;
+  }
+
+  const btn = event?.currentTarget;
+  setLoading(btn, true);
+
+  try {
+    const data = await interviewStart('Software Engineer', 'Google', 'mixed', 'intermediate');
+    activeInterviewId = data.interview._id;
+    renderInterviewMessages(data.interview);
+    document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
+    notify('Backend interview started. Your next messages will use the API.', 'success');
+  } catch (error) {
+    notify(error.message, 'error');
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+function buttonText(button) {
+  return button.textContent.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function updateAuthButtons() {
+  const user = typeof getUser === 'function' ? getUser() : null;
+
+  document.querySelectorAll('button').forEach((button) => {
+    if (buttonText(button) === 'sign in' || button.dataset.authButton === 'login') {
+      button.dataset.authButton = 'login';
+      button.textContent = user ? `Hi, ${user.name?.split(' ')[0] || 'there'}` : 'Sign In';
+    }
+  });
+}
+
+async function handleEmailVerificationRoute() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+
+  if (!token || !window.location.pathname.includes('verify-email')) return;
+
+  try {
+    const data = await authVerifyEmail(token);
+    updateAuthButtons();
+    notify(data.message || 'Email verified successfully.', 'success');
+    window.history.replaceState({}, '', 'index.html#dashboard');
+  } catch (error) {
+    notify(error.message, 'error');
+  }
+}
+
+function initBackendActions() {
+  createAuthModal();
+
+  document.querySelectorAll('button').forEach((button) => {
+    const text = buttonText(button);
+
+    if (text === 'sign in') {
+      button.dataset.authButton = 'login';
+      button.addEventListener('click', () => openAuthModal('login'));
+    }
+
+    if (text.includes('get started') || text.includes('start pro trial')) {
+      button.addEventListener('click', () => openAuthModal('register'));
+    }
+  });
+
+  document.querySelectorAll('.start-btn').forEach((button) => {
+    button.addEventListener('click', startBackendInterview);
+  });
+
+  updateAuthButtons();
+
+  if (typeof apiHealth === 'function') {
+    apiHealth().catch((error) => console.info(error.message));
+  }
+
+  handleEmailVerificationRoute();
+}
+
+initBackendActions();
