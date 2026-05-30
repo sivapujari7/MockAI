@@ -1,14 +1,33 @@
 const mongoose = require('mongoose');
 
+let connectionPromise;
+
 const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      dbName: 'mockai',
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI is not configured.');
+  }
+
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(process.env.MONGO_URI, {
+      dbName: process.env.MONGO_DB_NAME || 'mockai',
     });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+  }
+
+  try {
+    const conn = await connectionPromise;
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    return conn.connection;
   } catch (error) {
-    console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    process.exit(1);
+    connectionPromise = undefined;
+    console.error(`MongoDB Connection Error: ${error.message}`);
+
+    if (!process.env.VERCEL && require.main?.filename?.endsWith('server.js')) {
+      process.exit(1);
+    }
+
+    throw error;
   }
 };
 

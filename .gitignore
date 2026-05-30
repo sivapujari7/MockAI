@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+
+back_end/.env
+back_end/uploads/
+
+.vercel/
+dist/
+build/

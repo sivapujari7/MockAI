@@ -1,5 +1,5 @@
-require('dotenv').config();
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -8,7 +8,9 @@ const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
-connectDB();
+connectDB().catch((error) => {
+  console.error('Database startup failed:', error.message);
+});
 
 const app = express();
 
@@ -22,11 +24,14 @@ const defaultClientUrls = [
   'http://127.0.0.1:5500',
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:5001',
+  'http://127.0.0.1:5001',
 ];
 
 const envClientUrls = [
   process.env.CLIENT_URL,
   process.env.CLIENT_URLS,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
 ]
   .filter(Boolean)
   .flatMap((value) => value.split(','))
@@ -116,10 +121,13 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`\nMockAI Backend running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV}`);
-  console.log(`API Base URL: http://localhost:${PORT}/api\n`);
-});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\nMockAI Backend running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+    console.log(`API Base URL: http://localhost:${PORT}/api\n`);
+  });
+}
 
 module.exports = app;

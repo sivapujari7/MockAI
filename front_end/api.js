@@ -1,5 +1,6 @@
 /* ============================================================
-   MockAI shared API layer
+   MockAI browser API client
+   All AI/provider keys stay on the backend.
    ============================================================ */
 
 (function () {
@@ -14,8 +15,7 @@
   }
 
   function getConfiguredApiBase() {
-    const savedBase = localStorage.getItem('mockai_api_base');
-    const configuredBase = window.MOCKAI_API_BASE || savedBase;
+    const configuredBase = window.MOCKAI_API_BASE || localStorage.getItem('mockai_api_base');
 
     if (configuredBase) return normalizeApiBase(configuredBase);
     if (isLocalPage()) return LOCAL_API_BASE;
@@ -25,7 +25,6 @@
 
   const API_BASE = getConfiguredApiBase();
 
-  /* ---------- token helpers ---------- */
   const getToken = () => localStorage.getItem('mockai_token');
   const setToken = (token) => localStorage.setItem('mockai_token', token);
   const setUser = (user) => localStorage.setItem('mockai_user', JSON.stringify(user));
@@ -47,7 +46,6 @@
     window.location.reload();
   }
 
-  /* ---------- core fetch wrapper ---------- */
   async function api(endpoint, options = {}) {
     const headers = new Headers(options.headers || {});
     const hasFormData = options.body instanceof FormData;
@@ -65,7 +63,7 @@
     try {
       res = await fetch(`${API_BASE}${path}`, { ...options, headers });
     } catch {
-      throw new Error(`Cannot reach the backend at ${API_BASE}. Check your backend deployment URL and CORS settings.`);
+      throw new Error(`Cannot reach the backend at ${API_BASE}. Check your deployment URL or Vercel API route.`);
     }
 
     const text = await res.text();
@@ -90,7 +88,6 @@
     return api('/health');
   }
 
-  /* ---------- auth calls ---------- */
   async function authRegister(name, email, password, college, targetRole) {
     return api('/auth/register', {
       method: 'POST',
@@ -147,7 +144,6 @@
     });
   }
 
-  /* ---------- interview calls ---------- */
   async function interviewStart(jobRole, company, interviewType, difficulty) {
     return api('/interviews/start', {
       method: 'POST',
@@ -181,7 +177,6 @@
     return api(`/interviews/${id}`, { method: 'DELETE' });
   }
 
-  /* ---------- dashboard calls ---------- */
   async function dashboardGet() {
     return api('/dashboard');
   }
@@ -189,13 +184,14 @@
   async function dashboardAnalytics(days = 30) {
     return api(`/dashboard/analytics?days=${days}`);
   }
-async function uploadResume(formData) {
-  return api('/resume/upload', {
-    method: 'POST',
-    body: formData
-  });
-}
-  /* ---------- guards ---------- */
+
+  async function uploadResume(formData) {
+    return api('/resume/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   function requireAuth() {
     if (!isLoggedIn()) window.location.href = 'index.html';
   }
@@ -204,47 +200,31 @@ async function uploadResume(formData) {
     if (isLoggedIn()) window.location.href = '#dashboard';
   }
 
-  /* ---------- toast notification ---------- */
   function showToast(message, type = 'info') {
     const existing = document.getElementById('toast-container');
     if (existing) existing.remove();
 
-    const colors = {
-      success: '#00ff88',
-      error: '#ff5f5f',
-      info: '#6C63FF',
-      warning: '#FFB547',
-    };
-    const icons = {
-      success: 'OK',
-      error: '!',
-      info: 'i',
-      warning: '!',
-    };
+    const colors = { success: '#00ff88', error: '#ff5f5f', info: '#6C63FF', warning: '#FFB547' };
+    const icons = { success: 'OK', error: '!', info: 'i', warning: '!' };
+    const el = document.createElement('div');
 
-    const container = document.createElement('div');
-    container.id = 'toast-container';
-    container.style.cssText = `
-      position:fixed;bottom:28px;right:28px;z-index:9999;
-      background:rgba(13,20,40,0.95);border:1px solid ${colors[type]}44;
+    el.id = 'toast-container';
+    el.style.cssText = `position:fixed;bottom:28px;right:28px;z-index:9999;
+      background:rgba(13,20,40,0.97);border:1px solid ${colors[type]}44;
       border-left:3px solid ${colors[type]};border-radius:12px;
       padding:14px 20px;display:flex;align-items:center;gap:12px;
       font-family:'DM Sans',sans-serif;font-size:14px;color:#F0F2FF;
-      box-shadow:0 8px 32px rgba(0,0,0,0.4);max-width:360px;
-      animation:slideInToast 0.3s ease;
-    `;
-    container.innerHTML = `
-      <style>@keyframes slideInToast{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}</style>
-      <span style="font-weight:800;color:${colors[type]}">${icons[type]}</span>
-      <span>${message}</span>
-      <button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:rgba(240,242,255,0.4);font-size:16px;cursor:pointer;padding:0 0 0 8px">x</button>
-    `;
-    document.body.appendChild(container);
-    setTimeout(() => container?.remove(), 5000);
+      box-shadow:0 8px 32px rgba(0,0,0,0.4);max-width:380px;
+      animation:slideInToast .3s ease;`;
+    el.innerHTML = `<style>@keyframes slideInToast{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}</style>
+      <span style="font-weight:800;color:${colors[type]};font-size:16px">${icons[type]}</span>
+      <span style="flex:1">${message}</span>
+      <button onclick="this.parentElement.remove()" style="margin-left:4px;background:none;border:none;color:rgba(240,242,255,0.4);font-size:18px;cursor:pointer;line-height:1">x</button>`;
+    document.body.appendChild(el);
+    setTimeout(() => el?.remove(), 5000);
   }
 
-  /* ---------- loading button helper ---------- */
-  function setLoading(btn, loading, originalText) {
+  function setLoading(btn, loading) {
     if (!btn) return;
 
     if (loading) {
@@ -255,14 +235,13 @@ async function uploadResume(formData) {
     }
 
     btn.disabled = false;
-    btn.innerHTML = btn.dataset.original || originalText || btn.innerHTML;
+    btn.innerHTML = btn.dataset.original || btn.innerHTML;
   }
 
   const MockAI = {
     API_BASE,
     api,
     apiHealth,
-    uploadResume,
     setApiBase,
     getToken,
     setToken,
@@ -286,6 +265,7 @@ async function uploadResume(formData) {
     interviewDelete,
     dashboardGet,
     dashboardAnalytics,
+    uploadResume,
     requireAuth,
     redirectIfLoggedIn,
     showToast,

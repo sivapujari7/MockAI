@@ -9,13 +9,15 @@ const transporter = nodemailer.createTransport({
 });
 
 // ── Verify connection on startup
-transporter.verify((error) => {
-  if (error) {
-    console.error('❌ Email service error:', error.message);
-  } else {
-    console.log('✅ Email service ready');
-  }
-});
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  transporter.verify((error) => {
+    if (error) {
+      console.error('Email service error:', error.message);
+    } else {
+      console.log('Email service ready');
+    }
+  });
+}
 
 // ── Base HTML wrapper
 const getClientUrl = () => {
@@ -23,6 +25,10 @@ const getClientUrl = () => {
 
   if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
     return configuredUrl.replace(/\/+$/, '');
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/+$/, '')}`;
   }
 
   return process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 5000}`;

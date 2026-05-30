@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "front_end/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/(.*\\.(css|js|png|jpg|jpeg|gif|svg|webp|ico|txt|pdf|doc|docx))",
+      "dest": "/front_end/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/front_end/index.html"
+    }
+  ]
+}
