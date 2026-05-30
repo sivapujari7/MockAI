@@ -21,13 +21,6 @@ function buildAiContext(interview) {
   };
 }
 
-function getMonthStart() {
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
-  return startOfMonth;
-}
-
 // @route   POST /api/interviews/start
 // @access  Private
 exports.startInterview = async (req, res, next) => {
@@ -38,20 +31,6 @@ exports.startInterview = async (req, res, next) => {
       interviewType = 'mixed',
       difficulty = 'intermediate',
     } = req.body;
-
-    if (req.user.plan === 'free') {
-      const count = await Interview.countDocuments({
-        user: req.user._id,
-        createdAt: { $gte: getMonthStart() },
-      });
-
-      if (count >= 5) {
-        return res.status(403).json({
-          success: false,
-          message: 'Free plan limit reached (5 interviews/month). Upgrade to Pro for unlimited sessions.',
-        });
-      }
-    }
 
     const openingMessage = await generateInterviewResponse({
       jobRole: normalizeText(jobRole, 'Software Engineer'),

@@ -886,3 +886,60 @@ footer {
   .logos-track { gap: 24px; }
   .dash-stats-row { grid-template-columns: 1fr 1fr; }
 }
+/* =============================================
+   RESUME RESULT CARD
+============================================= */
+.resume-analyzing {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 24px; color: var(--text-muted); font-size: 14px;
+}
+.resume-spinner {
+  width: 28px; height: 28px;
+  border: 3px solid rgba(108,99,255,0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.resume-result-card {
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(108,99,255,0.2);
+  border-radius: var(--radius); padding: 16px; margin-top: 4px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.resume-result-header {
+  display: flex; align-items: center; gap: 16px;
+}
+.ats-score-ring { position: relative; flex-shrink: 0; }
+.ats-score-num {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center;
+  font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
+}
+.resume-section { display: flex; flex-direction: column; gap: 8px; }
+.resume-section-label {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.res-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.res-tag {
+  padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+}
+.res-tag-good {
+  background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.2); color: #00ff88;
+}
+.res-tag-miss {
+  background: rgba(255,95,95,0.1); border: 1px solid rgba(255,95,95,0.2); color: #ff5f5f;
+}
+.res-improve-list {
+  list-style: none; display: flex; flex-direction: column; gap: 6px;
+}
+.res-improve-list li {
+  display: flex; gap: 8px; font-size: 13px; color: var(--text-muted); line-height: 1.5;
+}
+.res-improve-list li::before { content: '→'; color: var(--primary); flex-shrink: 0; }
+
+/* =============================================
+   DASHBOARD RECOMMENDATIONS PANEL
+============================================= */
+#dashRecommendations {
+  animation: fadeSlide 0.4s ease;
+}

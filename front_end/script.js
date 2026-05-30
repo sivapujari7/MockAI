@@ -211,7 +211,6 @@ async function ensureBackendAvailable() {
 function showVerificationFallback(url) {
   const box = document.getElementById('verificationFallback');
   if (!box || !url) return;
-
   box.hidden = false;
   box.className = 'verification-fallback';
   box.innerHTML = `
@@ -228,8 +227,10 @@ async function handleLoginSubmit(e) {
   try {
     if (!(await ensureBackendAvailable())) return;
     await authLogin(form.get('email'), form.get('password'));
-    closeAuthModal(); updateAuthButtons();
+    closeAuthModal();
+    updateAuthButtons();
     showToast('Signed in successfully!', 'success');
+    loadDashboard();
   } catch (err) { showToast(err.message, 'error'); }
   finally { setLoading(submit, false); }
 }
@@ -303,7 +304,6 @@ function removeTypingIndicator() {
 
 function updateScores(feedback) {
   if (!feedback) return;
-
   const conf = Number(feedback.confidenceScore) || 0;
   const comm = Number(feedback.communicationScore) || 0;
   const tech = Number(feedback.technicalScore) || 0;
@@ -386,6 +386,8 @@ document.querySelectorAll('.job-role-selector .role-chip').forEach(chip => {
 
 /* ══════════════════════════════════════════
    14. RESUME ANALYSIS — FULLY FUNCTIONAL
+   Backend returns: atsScore, skillsFound, missingSkills,
+                    strengths, improvements, summary
 ══════════════════════════════════════════ */
 async function handleResumeUpload() {
   const fileInput = document.getElementById('resumeFile');
@@ -394,7 +396,12 @@ async function handleResumeUpload() {
   const file = fileInput?.files[0];
 
   if (!file) { showToast('Please select a resume file first.', 'error'); return; }
-  const allowed = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+  const allowed = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain'
+  ];
   if (!allowed.some(t => file.type === t) && !file.name.match(/\.(pdf|doc|docx|txt)$/i)) {
     showToast('Please upload a PDF, DOC, DOCX, or TXT file.', 'error'); return;
   }
@@ -403,7 +410,7 @@ async function handleResumeUpload() {
   if (resultEl) {
     resultEl.innerHTML = `<div class="resume-analyzing">
       <div class="resume-spinner"></div>
-      <p>Analyzing your resume with the backend AI...</p>
+      <p>Analyzing your resume with AI...</p>
     </div>`;
   }
 
@@ -418,6 +425,7 @@ async function handleResumeUpload() {
     const selectedRole = document.querySelector('.job-role-selector .role-chip.active')?.textContent?.trim() || 'Software Engineer';
     formData.append('targetRole', selectedRole);
 
+    // POST /api/resume/upload  →  { success: true, analysis: { atsScore, skillsFound, missingSkills, strengths, improvements, summary } }
     const data = await MockAI.uploadResume(formData);
     if (!data.analysis) throw new Error('Resume analysis returned no result.');
     renderResumeResult(data.analysis);
@@ -428,14 +436,29 @@ async function handleResumeUpload() {
     setLoading(btn, false);
   }
 }
+
 function renderResumeResult(analysis) {
   const resultEl = document.getElementById('resumeResult');
   if (!resultEl) return;
-  const ats = analysis.atsScore || 0;
+
+  const ats   = analysis.atsScore || 0;
   const color = ats >= 80 ? '#00ff88' : ats >= 60 ? '#FFB547' : '#ff5f5f';
-  const skills = (analysis.skillsFound || []).map(s => `<span class="res-tag res-tag-good">${s}</span>`).join('');
-  const missing = (analysis.missingSkills || []).map(s => `<span class="res-tag res-tag-miss">${s}</span>`).join('');
-  const improvements = (analysis.improvements || []).map(i => `<li>${i}</li>`).join('');
+
+  // skillsFound
+  const skills = (analysis.skillsFound || [])
+    .map(s => `<span class="res-tag res-tag-good">${s}</span>`).join('');
+
+  // missingSkills
+  const missing = (analysis.missingSkills || [])
+    .map(s => `<span class="res-tag res-tag-miss">${s}</span>`).join('');
+
+  // strengths (backend returns this; render as green tags)
+  const strengths = (analysis.strengths || [])
+    .map(s => `<li>${s}</li>`).join('');
+
+  // improvements
+  const improvements = (analysis.improvements || [])
+    .map(i => `<li>${i}</li>`).join('');
 
   resultEl.innerHTML = `
     <div class="resume-result-card">
@@ -444,7 +467,7 @@ function renderResumeResult(analysis) {
           <svg viewBox="0 0 80 80" style="width:80px;height:80px;transform:rotate(-90deg)">
             <circle cx="40" cy="40" r="32" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="8"/>
             <circle cx="40" cy="40" r="32" fill="none" stroke="${color}" stroke-width="8"
-              stroke-dasharray="${2 * Math.PI * 32}" stroke-dashoffset="${2 * Math.PI * 32 * (1 - ats/100)}"
+              stroke-dasharray="${2 * Math.PI * 32}" stroke-dashoffset="${2 * Math.PI * 32 * (1 - ats / 100)}"
               stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/>
           </svg>
           <div class="ats-score-num" style="color:${color}">${ats}%</div>
@@ -454,8 +477,9 @@ function renderResumeResult(analysis) {
           <div style="font-size:13px;color:rgba(240,242,255,0.5)">${analysis.summary || 'Analysis complete.'}</div>
         </div>
       </div>
-      ${skills ? `<div class="resume-section"><div class="resume-section-label">✓ Skills Found</div><div class="res-tags">${skills}</div></div>` : ''}
-      ${missing ? `<div class="resume-section"><div class="resume-section-label">⚠ Missing Keywords</div><div class="res-tags">${missing}</div></div>` : ''}
+      ${skills   ? `<div class="resume-section"><div class="resume-section-label">✓ Skills Found</div><div class="res-tags">${skills}</div></div>` : ''}
+      ${missing  ? `<div class="resume-section"><div class="resume-section-label">⚠ Missing Keywords</div><div class="res-tags">${missing}</div></div>` : ''}
+      ${strengths ? `<div class="resume-section"><div class="resume-section-label">💪 Strengths</div><ul class="res-improve-list">${strengths}</ul></div>` : ''}
       ${improvements ? `<div class="resume-section"><div class="resume-section-label">💡 Improvements</div><ul class="res-improve-list">${improvements}</ul></div>` : ''}
     </div>`;
 }
@@ -466,7 +490,7 @@ document.getElementById('uploadResumeBtn')?.addEventListener('click', handleResu
    15. START INTERVIEW BUTTON
 ══════════════════════════════════════════ */
 async function startAIInterview(btn) {
-  const role = document.querySelector('.job-role-selector .role-chip.active')?.textContent?.trim() || 'Software Engineer';
+  const role    = document.querySelector('.job-role-selector .role-chip.active')?.textContent?.trim() || 'Software Engineer';
   const company = document.querySelector('[data-company].active')?.textContent?.trim() || 'General';
   currentJobRole = role;
 
@@ -502,6 +526,7 @@ async function startAIInterview(btn) {
     setLoading(btn, false);
   }
 }
+
 /* ══════════════════════════════════════════
    16. WIRE UP ALL BUTTONS
 ══════════════════════════════════════════ */
@@ -511,64 +536,258 @@ function initAllButtons() {
   document.querySelectorAll('button').forEach(btn => {
     const text = btn.textContent.replace(/\s+/g, ' ').trim().toLowerCase();
 
-    // Sign In
     if ((text === 'sign in' || btn.dataset.authButton === 'login') && !btn.dataset.wired) {
       btn.dataset.authButton = 'login';
       btn.dataset.wired = '1';
       btn.addEventListener('click', () => openAuthModal('login'));
     }
-    // Get Started / Register
     if ((text.includes('get started') || text.includes('start pro trial')) && !btn.dataset.wired) {
       btn.dataset.wired = '1';
       btn.addEventListener('click', () => openAuthModal('register'));
     }
-    // CTA final buttons
     if (text.includes('get started free') && !btn.dataset.wired) {
       btn.dataset.wired = '1';
       btn.addEventListener('click', () => { document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' }); });
     }
-    // "Talk to Placement Team"
     if (text.includes('talk to placement') && !btn.dataset.wired) {
       btn.dataset.wired = '1';
       btn.addEventListener('click', () => showToast('📧 Opening contact form — reach us at hello@mockai.in', 'info'));
     }
   });
 
-  // Start Interview buttons (class .start-btn)
   document.querySelectorAll('.start-btn').forEach(btn => {
-    if (btn.id === 'uploadResumeBtn') return; // already wired
+    if (btn.id === 'uploadResumeBtn') return;
     if (!btn.dataset.wired) {
       btn.dataset.wired = '1';
       btn.addEventListener('click', () => startAIInterview(btn));
     }
   });
+
   ensureBackendAvailable().then(available => {
     console.log(`Backend: ${available ? 'online' : 'offline'}`);
   });
 }
 
-// Make globally available
-window.openAuthModal = openAuthModal;
+window.openAuthModal  = openAuthModal;
 window.closeAuthModal = closeAuthModal;
 
 /* ══════════════════════════════════════════
-   17. DYNAMIC DASHBOARD (pull real data if available)
+   17. DASHBOARD — REAL DATA FROM BACKEND
+   API: GET /api/dashboard
+   Response shape:
+   {
+     success: true,
+     dashboard: {
+       stats: { totalSessions, avgScore, practiceHours, jobApplications },
+       recentInterviews: [{ jobRole, company, interviewType, feedback: { overallScore }, createdAt, durationMinutes }],
+       weeklyScores:     [{ date, score, type }],
+       skillBreakdown:   { confidence, communication, technical },
+       typeDistribution: { mixed: N, technical: N, hr: N },
+       recommendations:  ["tip1", "tip2", "tip3"],
+       totalInterviews:  N,
+       inProgress:       N
+     }
+   }
 ══════════════════════════════════════════ */
+
+/* ── Helpers ── */
+function relativeDate(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return `${days} days ago`;
+}
+
+function scoreClass(score) {
+  if (score >= 80) return 'sp-high';
+  if (score >= 65) return 'sp-mid';
+  return 'sp-low';
+}
+
+function initials(name) {
+  if (!name) return 'ME';
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+/* ── Main dashboard loader ── */
 async function loadDashboard() {
   try {
-    if (!isLoggedIn?.()) return; // keep static preview
+    if (!isLoggedIn?.()) {
+      // Not logged in — keep the static preview, but update user avatar to placeholder
+      return;
+    }
 
-    const [dashData] = await Promise.all([MockAI.dashboardGet()]);
-    if (!dashData?.data) return;
+    // Update user info in topbar immediately from cached token data
+    const user = getUser?.();
+    if (user) {
+      const userAvaEl   = document.querySelector('.user-ava');
+      const userNameEl  = document.querySelector('.user-name');
+      const userPlanEl  = document.querySelector('.user-plan');
+      if (userAvaEl)  userAvaEl.textContent  = initials(user.name);
+      if (userNameEl) userNameEl.textContent  = user.name || 'User';
+      if (userPlanEl) userPlanEl.textContent  = user.plan || 'Free';
+    }
 
-    const d = dashData.data;
-    // Update stat cards
-    const statVals = document.querySelectorAll('.dash-stat-val');
-    if (statVals[0]) statVals[0].textContent = d.totalSessions || '0';
-    if (statVals[1]) statVals[1].textContent = (d.avgScore || '0') + '%';
-    if (statVals[2]) statVals[2].textContent = (d.practiceHours || '0') + 'h';
+    // Fetch from GET /api/dashboard  →  { success, dashboard: { ... } }
+    const res = await MockAI.dashboardGet();
+    if (!res || !res.dashboard) return;
+
+    const d = res.dashboard;
+
+    /* ── Stat cards ── */
+    const statVals    = document.querySelectorAll('.dash-stat-val');
+    const statChanges = document.querySelectorAll('.dash-stat-change');
+
+    // Card 0: Total Sessions
+    if (statVals[0]) {
+      statVals[0].textContent = d.totalInterviews ?? d.stats?.totalSessions ?? '0';
+    }
+    if (statChanges[0]) {
+      const inProg = d.inProgress || 0;
+      statChanges[0].textContent = inProg > 0 ? `↑ ${inProg} in progress` : '0 in progress';
+      statChanges[0].className   = 'dash-stat-change ' + (inProg > 0 ? 'up' : '');
+    }
+
+    // Card 1: Avg Score
+    const avgScore = d.stats?.avgScore ?? (d.weeklyScores?.length
+      ? Math.round(d.weeklyScores.reduce((s, w) => s + (w.score || 0), 0) / d.weeklyScores.length)
+      : 0);
+    if (statVals[1]) statVals[1].textContent = avgScore + '%';
+    if (statChanges[1]) {
+      statChanges[1].textContent = avgScore >= 70 ? '↑ Good performance' : '↗ Keep practicing';
+      statChanges[1].className   = 'dash-stat-change up';
+    }
+
+    // Card 2: Practice Hours
+    const hours = d.stats?.practiceHours ?? '0';
+    if (statVals[2]) statVals[2].textContent = hours + 'h';
+    if (statChanges[2]) {
+      statChanges[2].textContent = `${d.totalInterviews || 0} sessions total`;
+      statChanges[2].className   = 'dash-stat-change up';
+    }
+
+    // Card 3: Job Applications (from user stats if available)
+    const apps = d.stats?.jobApplications ?? '—';
+    if (statVals[3]) statVals[3].textContent = apps;
+    if (statChanges[3]) {
+      statChanges[3].textContent = d.stats?.interviews ? `↑ ${d.stats.interviews} interviews` : 'Track your apps';
+      statChanges[3].className   = 'dash-stat-change up';
+    }
+
+    /* ── Weekly score chart ── */
+    if (d.weeklyScores && d.weeklyScores.length > 0) {
+      const bars = document.querySelectorAll('.mini-chart .chart-bar');
+      const scores = d.weeklyScores.slice(-10);
+      const maxScore = Math.max(...scores.map(s => s.score || 0), 1);
+
+      bars.forEach((bar, i) => {
+        const entry = scores[i];
+        if (!entry) { bar.style.height = '10%'; return; }
+        const pct = Math.max(10, Math.round((entry.score / maxScore) * 90));
+        bar.style.height = pct + '%';
+        // Highlight the most recent bar
+        if (i === scores.length - 1) {
+          bar.style.background = 'linear-gradient(180deg,var(--secondary),rgba(0,212,255,0.2))';
+        } else {
+          bar.style.background = 'linear-gradient(180deg,var(--primary),rgba(108,99,255,0.2))';
+        }
+        bar.title = `Score: ${entry.score}% — ${relativeDate(entry.date)}`;
+      });
+    }
+
+    /* ── Skill breakdown ── */
+    if (d.skillBreakdown) {
+      const sb = d.skillBreakdown;
+
+      // Map skillBreakdown keys to ring elements (order: communication, technical, confidence, problem solving)
+      const ringFills = document.querySelectorAll('.ring-fill');
+      const ringPcts  = document.querySelectorAll('.ring-pct');
+
+      const skillMap = [
+        sb.communication ?? 0,
+        sb.technical     ?? 0,
+        sb.confidence    ?? 0,
+        0, // problem solving — not returned by backend, show 0
+      ];
+
+      ringFills.forEach((fill, i) => {
+        if (skillMap[i] !== undefined) fill.style.width = skillMap[i] + '%';
+      });
+      ringPcts.forEach((pct, i) => {
+        if (skillMap[i] !== undefined) pct.textContent = skillMap[i] + '%';
+      });
+    }
+
+    /* ── Recent interviews table ── */
+    if (d.recentInterviews && d.recentInterviews.length > 0) {
+      const tbody = document.querySelector('.history-table tbody');
+      if (tbody) {
+        tbody.innerHTML = d.recentInterviews.map(iv => {
+          const score = iv.feedback?.overallScore || 0;
+          const pill  = `<span class="score-pill ${scoreClass(score)}">${score}%</span>`;
+          const type  = (iv.interviewType || 'mixed').replace(/-/g, ' ');
+          return `<tr>
+            <td>${iv.jobRole || 'Interview'}</td>
+            <td>${iv.company || '—'}</td>
+            <td style="color:var(--text-muted);text-transform:capitalize">${type}</td>
+            <td>${pill}</td>
+            <td style="color:var(--text-dim)">${relativeDate(iv.createdAt)}</td>
+          </tr>`;
+        }).join('');
+      }
+    } else if (d.totalInterviews === 0) {
+      // First-time user — show empty state
+      const tbody = document.querySelector('.history-table tbody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:24px">
+          No interviews yet. Start your first AI mock interview above! 🚀
+        </td></tr>`;
+      }
+    }
+
+    /* ── Sidebar badge: in-progress interviews ── */
+    const badge = document.querySelector('.sidebar-badge');
+    if (badge) badge.textContent = d.inProgress || '0';
+
+    /* ── AI Recommendations panel ── */
+    if (d.recommendations && d.recommendations.length > 0) {
+      renderRecommendations(d.recommendations);
+    }
+
   } catch (e) {
     console.warn('Dashboard data unavailable:', e.message);
+  }
+}
+
+/* ── Render AI recommendations below the chart cards ── */
+function renderRecommendations(tips) {
+  const dashMain = document.querySelector('.dash-main');
+  if (!dashMain || !tips || tips.length === 0) return;
+
+  // Remove existing recommendations panel if present
+  document.getElementById('dashRecommendations')?.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'dashRecommendations';
+  panel.className = 'dash-chart-card';
+  panel.style.marginBottom = '20px';
+  panel.innerHTML = `
+    <div class="chart-title">🤖 AI Coach Recommendations</div>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
+      ${tips.map(tip => `
+        <li style="display:flex;gap:10px;font-size:13px;color:var(--text-muted);line-height:1.5">
+          <span style="color:var(--primary);flex-shrink:0">→</span>
+          <span>${tip}</span>
+        </li>`).join('')}
+    </ul>`;
+
+  // Insert before the recent interviews history section
+  const history = dashMain.querySelector('.dash-history');
+  if (history) {
+    dashMain.insertBefore(panel, history);
+  } else {
+    dashMain.appendChild(panel);
   }
 }
 
@@ -577,7 +796,7 @@ async function loadDashboard() {
 ══════════════════════════════════════════ */
 async function handleEmailVerification() {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
+  const token  = params.get('token');
   if (!token) return;
   try {
     const data = await MockAI.authVerifyEmail(token);
@@ -594,20 +813,19 @@ async function handleEmailVerification() {
 ══════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
   initAllButtons();
+  updateAuthButtons();
   loadDashboard();
   handleEmailVerification();
 });
 
-// Also init immediately in case DOMContentLoaded already fired
 if (document.readyState !== 'loading') {
   initAllButtons();
+  updateAuthButtons();
 }
+
 document.querySelectorAll('[data-company]').forEach(chip => {
   chip.addEventListener('click', function () {
-    document.querySelectorAll('[data-company]').forEach(c => {
-      c.classList.remove('active');
-    });
-
+    document.querySelectorAll('[data-company]').forEach(c => c.classList.remove('active'));
     this.classList.add('active');
   });
 });
