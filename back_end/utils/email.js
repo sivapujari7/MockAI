@@ -1,21 +1,35 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASS,
+  },
+});
 
-// ── Get frontend URL
+if (process.env.BREVO_USER && process.env.BREVO_PASS) {
+  transporter.verify((error) => {
+    if (error) {
+      console.error('Email service error:', error.message);
+    } else {
+      console.log('Email service ready');
+    }
+  });
+}
+
 const getClientUrl = () => {
   const configuredUrl = process.env.CLIENT_URL;
-
   if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
     return configuredUrl.trim().replace(/\/+$/, '');
   }
-
   return `http://localhost:${process.env.PORT || 5000}`;
 };
 
 const getVerificationUrl = (token) => `${getClientUrl()}/verify-email?token=${token}`;
 
-// ── Base HTML wrapper
 const emailWrapper = (content) => `
 <!DOCTYPE html>
 <html>
@@ -53,8 +67,8 @@ const emailWrapper = (content) => `
 // ── Send verification email
 const sendVerificationEmail = async (email, name, token) => {
   const verifyUrl = getVerificationUrl(token);
-  await resend.emails.send({
-    from: 'MockAI <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
     to: email,
     subject: '✅ Verify Your MockAI Account',
     html: emailWrapper(`
@@ -69,8 +83,8 @@ const sendVerificationEmail = async (email, name, token) => {
 // ── Send password reset email
 const sendPasswordResetEmail = async (email, name, token) => {
   const resetUrl = `${getClientUrl()}/reset-password?token=${token}`;
-  await resend.emails.send({
-    from: 'MockAI <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
     to: email,
     subject: '🔐 Reset Your MockAI Password',
     html: emailWrapper(`
@@ -84,8 +98,8 @@ const sendPasswordResetEmail = async (email, name, token) => {
 
 // ── Send welcome email after verification
 const sendWelcomeEmail = async (email, name) => {
-  await resend.emails.send({
-    from: 'MockAI <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
     to: email,
     subject: '🎉 Welcome to MockAI – Let\'s Get You Hired!',
     html: emailWrapper(`
@@ -100,8 +114,8 @@ const sendWelcomeEmail = async (email, name) => {
 
 // ── Send interview completion email
 const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
-  await resend.emails.send({
-    from: 'MockAI <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
     to: email,
     subject: `📊 Interview Report – ${jobRole} | Score: ${scores.overall}%`,
     html: emailWrapper(`
