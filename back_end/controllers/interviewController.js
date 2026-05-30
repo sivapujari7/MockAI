@@ -1,4 +1,4 @@
-const Interview = require('../models/interview');
+const Interview = require('../models/Interview');
 const User = require('../models/User');
 const { sendInterviewCompleteEmail } = require('../utils/email');
 
