@@ -1,25 +1,20 @@
-const nodemailer = require('nodemailer');
+const Brevo = require('@getbrevo/brevo');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASS,
-  },
-});
+const brevoClient = Brevo.ApiClient.instance;
+brevoClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
 
-if (process.env.BREVO_USER && process.env.BREVO_PASS) {
-  transporter.verify((error) => {
-    if (error) {
-      console.error('Email service error:', error.message);
-    } else {
-      console.log('Email service ready');
-    }
-  });
-}
+const transactionalApi = new Brevo.TransactionalEmailsApi();
 
+const sendEmail = async (to, subject, htmlContent) => {
+  const email = new Brevo.SendSmtpEmail();
+  email.sender = { name: 'MockAI', email: 'ab8705001@smtp-brevo.com' };
+  email.to = [{ email: to }];
+  email.subject = subject;
+  email.htmlContent = htmlContent;
+  await transactionalApi.sendTransacEmail(email);
+};
+
+// ── Get frontend URL
 const getClientUrl = () => {
   const configuredUrl = process.env.CLIENT_URL;
   if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
@@ -67,58 +62,54 @@ const emailWrapper = (content) => `
 // ── Send verification email
 const sendVerificationEmail = async (email, name, token) => {
   const verifyUrl = getVerificationUrl(token);
-  await transporter.sendMail({
-    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
-    to: email,
-    subject: '✅ Verify Your MockAI Account',
-    html: emailWrapper(`
+  await sendEmail(
+    email,
+    '✅ Verify Your MockAI Account',
+    emailWrapper(`
       <p>Hi <strong>${name}</strong> 👋</p>
       <p>Welcome to <strong>MockAI</strong>! You're one step away from acing your interviews. Please verify your email address to activate your account.</p>
       <a class="btn" href="${verifyUrl}">✅ Verify My Email</a>
       <p style="font-size:13px;color:rgba(240,242,255,0.4);">This link expires in <strong>24 hours</strong>. If you didn't create an account, you can safely ignore this email.</p>
-    `),
-  });
+    `)
+  );
 };
 
 // ── Send password reset email
 const sendPasswordResetEmail = async (email, name, token) => {
   const resetUrl = `${getClientUrl()}/reset-password?token=${token}`;
-  await transporter.sendMail({
-    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
-    to: email,
-    subject: '🔐 Reset Your MockAI Password',
-    html: emailWrapper(`
+  await sendEmail(
+    email,
+    '🔐 Reset Your MockAI Password',
+    emailWrapper(`
       <p>Hi <strong>${name}</strong>,</p>
       <p>We received a request to reset your MockAI password. Click the button below to set a new one. This link is valid for <strong>1 hour</strong>.</p>
       <a class="btn" href="${resetUrl}">🔐 Reset My Password</a>
       <p style="font-size:13px;color:rgba(240,242,255,0.4);">If you didn't request a password reset, please ignore this email.</p>
-    `),
-  });
+    `)
+  );
 };
 
 // ── Send welcome email after verification
 const sendWelcomeEmail = async (email, name) => {
-  await transporter.sendMail({
-    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
-    to: email,
-    subject: '🎉 Welcome to MockAI – Let\'s Get You Hired!',
-    html: emailWrapper(`
+  await sendEmail(
+    email,
+    '🎉 Welcome to MockAI – Let\'s Get You Hired!',
+    emailWrapper(`
       <p>Hi <strong>${name}</strong> 🎉</p>
       <p>Your email is verified and your MockAI account is fully activated!</p>
       <p><strong>Here's what to do next:</strong></p>
       <p>📄 Upload your resume for an ATS score<br>🎯 Select your target job role<br>🤖 Start your first AI mock interview</p>
       <a class="btn" href="${getClientUrl()}">🚀 Go to Dashboard</a>
-    `),
-  });
+    `)
+  );
 };
 
 // ── Send interview completion email
 const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
-  await transporter.sendMail({
-    from: '"MockAI 🤖" <ab8705001@smtp-brevo.com>',
-    to: email,
-    subject: `📊 Interview Report – ${jobRole} | Score: ${scores.overall}%`,
-    html: emailWrapper(`
+  await sendEmail(
+    email,
+    `📊 Interview Report – ${jobRole} | Score: ${scores.overall}%`,
+    emailWrapper(`
       <p>Hi <strong>${name}</strong>,</p>
       <p>You just completed a <strong>${jobRole}</strong> mock interview on MockAI.</p>
       <div class="code-box">
@@ -127,8 +118,8 @@ const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
       </div>
       <p>📊 Confidence: <strong>${scores.confidence}%</strong> &nbsp;|&nbsp; 💬 Communication: <strong>${scores.communication}%</strong> &nbsp;|&nbsp; 💻 Technical: <strong>${scores.technical}%</strong></p>
       <a class="btn" href="${getClientUrl()}/dashboard">View Full Report →</a>
-    `),
-  });
+    `)
+  );
 };
 
 module.exports = {
