@@ -1,52 +1,21 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-// AFTER
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false
-  },
-  // Force IPv4 — Render free tier can't reach Gmail over IPv6
-  family: 4,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ── Verify connection on startup
-if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-  transporter.verify((error) => {
-    if (error) {
-      console.error('Email service error:', error.message);
-    } else {
-      console.log('Email service ready');
-    }
-  });
-}
-
-// ── Base HTML wrapper
+// ── Get frontend URL
 const getClientUrl = () => {
   const configuredUrl = process.env.CLIENT_URL;
 
   if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
-    return configuredUrl.replace(/\/+$/, '');
+    return configuredUrl.trim().replace(/\/+$/, '');
   }
 
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL.replace(/\/+$/, '')}`;
-  }
-
-return `http://localhost:${process.env.PORT || 5000}`;
+  return `http://localhost:${process.env.PORT || 5000}`;
 };
 
 const getVerificationUrl = (token) => `${getClientUrl()}/verify-email?token=${token}`;
 
+// ── Base HTML wrapper
 const emailWrapper = (content) => `
 <!DOCTYPE html>
 <html>
@@ -84,77 +53,67 @@ const emailWrapper = (content) => `
 // ── Send verification email
 const sendVerificationEmail = async (email, name, token) => {
   const verifyUrl = getVerificationUrl(token);
-  const html = emailWrapper(`
-    <p>Hi <strong>${name}</strong> 👋</p>
-    <p>Welcome to <strong>MockAI</strong>! You're one step away from acing your interviews. Please verify your email address to activate your account.</p>
-    <a class="btn" href="${verifyUrl}">✅ Verify My Email</a>
-    <p style="font-size:13px;color:rgba(240,242,255,0.4);">This link expires in <strong>24 hours</strong>. If you didn't create an account, you can safely ignore this email.</p>
-  `);
-
-  await transporter.sendMail({
-    from: `"MockAI 🤖" <${process.env.EMAIL_USER}>`,
+  await resend.emails.send({
+    from: 'MockAI <onboarding@resend.dev>',
     to: email,
     subject: '✅ Verify Your MockAI Account',
-    html,
+    html: emailWrapper(`
+      <p>Hi <strong>${name}</strong> 👋</p>
+      <p>Welcome to <strong>MockAI</strong>! You're one step away from acing your interviews. Please verify your email address to activate your account.</p>
+      <a class="btn" href="${verifyUrl}">✅ Verify My Email</a>
+      <p style="font-size:13px;color:rgba(240,242,255,0.4);">This link expires in <strong>24 hours</strong>. If you didn't create an account, you can safely ignore this email.</p>
+    `),
   });
 };
 
 // ── Send password reset email
 const sendPasswordResetEmail = async (email, name, token) => {
   const resetUrl = `${getClientUrl()}/reset-password?token=${token}`;
-  const html = emailWrapper(`
-    <p>Hi <strong>${name}</strong>,</p>
-    <p>We received a request to reset your MockAI password. Click the button below to set a new one. This link is valid for <strong>1 hour</strong>.</p>
-    <a class="btn" href="${resetUrl}">🔐 Reset My Password</a>
-    <p style="font-size:13px;color:rgba(240,242,255,0.4);">If you didn't request a password reset, please ignore this email. Your account is safe.</p>
-  `);
-
-  await transporter.sendMail({
-    from: `"MockAI 🤖" <${process.env.EMAIL_USER}>`,
+  await resend.emails.send({
+    from: 'MockAI <onboarding@resend.dev>',
     to: email,
     subject: '🔐 Reset Your MockAI Password',
-    html,
+    html: emailWrapper(`
+      <p>Hi <strong>${name}</strong>,</p>
+      <p>We received a request to reset your MockAI password. Click the button below to set a new one. This link is valid for <strong>1 hour</strong>.</p>
+      <a class="btn" href="${resetUrl}">🔐 Reset My Password</a>
+      <p style="font-size:13px;color:rgba(240,242,255,0.4);">If you didn't request a password reset, please ignore this email.</p>
+    `),
   });
 };
 
 // ── Send welcome email after verification
 const sendWelcomeEmail = async (email, name) => {
-  const html = emailWrapper(`
-    <p>Hi <strong>${name}</strong> 🎉</p>
-    <p>Your email is verified and your MockAI account is fully activated! You're all set to start practicing and landing your dream job.</p>
-    <p><strong>Here's what to do next:</strong></p>
-    <p>📄 Upload your resume for an ATS score<br>🎯 Select your target job role<br>🤖 Start your first AI mock interview</p>
-    <a class="btn" href="${getClientUrl()}">🚀 Go to Dashboard</a>
-    <p style="font-size:13px;color:rgba(240,242,255,0.4);">Good luck! The MockAI team is rooting for you.</p>
-  `);
-
-  await transporter.sendMail({
-    from: `"MockAI 🤖" <${process.env.EMAIL_USER}>`,
+  await resend.emails.send({
+    from: 'MockAI <onboarding@resend.dev>',
     to: email,
     subject: '🎉 Welcome to MockAI – Let\'s Get You Hired!',
-    html,
+    html: emailWrapper(`
+      <p>Hi <strong>${name}</strong> 🎉</p>
+      <p>Your email is verified and your MockAI account is fully activated!</p>
+      <p><strong>Here's what to do next:</strong></p>
+      <p>📄 Upload your resume for an ATS score<br>🎯 Select your target job role<br>🤖 Start your first AI mock interview</p>
+      <a class="btn" href="${getClientUrl()}">🚀 Go to Dashboard</a>
+    `),
   });
 };
 
 // ── Send interview completion email
 const sendInterviewCompleteEmail = async (email, name, jobRole, scores) => {
-  const html = emailWrapper(`
-    <p>Hi <strong>${name}</strong>,</p>
-    <p>You just completed a <strong>${jobRole}</strong> mock interview on MockAI. Here's your quick score summary:</p>
-    <div class="code-box">
-      <p style="margin:0 0 8px;font-size:13px;color:rgba(240,242,255,0.5)">OVERALL SCORE</p>
-      <span>${scores.overall}%</span>
-    </div>
-    <p>📊 Confidence: <strong>${scores.confidence}%</strong> &nbsp;|&nbsp; 💬 Communication: <strong>${scores.communication}%</strong> &nbsp;|&nbsp; 💻 Technical: <strong>${scores.technical}%</strong></p>
-    <a class="btn" href="${getClientUrl()}/dashboard">View Full Report →</a>
-    <p style="font-size:13px;color:rgba(240,242,255,0.4);">Keep practicing — consistency is the key to success!</p>
-  `);
-
-  await transporter.sendMail({
-    from: `"MockAI 🤖" <${process.env.EMAIL_USER}>`,
+  await resend.emails.send({
+    from: 'MockAI <onboarding@resend.dev>',
     to: email,
     subject: `📊 Interview Report – ${jobRole} | Score: ${scores.overall}%`,
-    html,
+    html: emailWrapper(`
+      <p>Hi <strong>${name}</strong>,</p>
+      <p>You just completed a <strong>${jobRole}</strong> mock interview on MockAI.</p>
+      <div class="code-box">
+        <p style="margin:0 0 8px;font-size:13px;color:rgba(240,242,255,0.5)">OVERALL SCORE</p>
+        <span>${scores.overall}%</span>
+      </div>
+      <p>📊 Confidence: <strong>${scores.confidence}%</strong> &nbsp;|&nbsp; 💬 Communication: <strong>${scores.communication}%</strong> &nbsp;|&nbsp; 💻 Technical: <strong>${scores.technical}%</strong></p>
+      <a class="btn" href="${getClientUrl()}/dashboard">View Full Report →</a>
+    `),
   });
 };
 
