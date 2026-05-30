@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 
+// AFTER
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
@@ -10,7 +11,12 @@ const transporter = nodemailer.createTransport({
   },
   tls: {
     rejectUnauthorized: false
-  }
+  },
+  // Force IPv4 — Render free tier can't reach Gmail over IPv6
+  family: 4,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 // ── Verify connection on startup

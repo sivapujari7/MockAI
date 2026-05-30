@@ -12,12 +12,10 @@ connectDB().catch((error) => {
   console.error('Database startup failed:', error.message);
 });
 
+// AFTER — trust proxy must be set before ANY middleware
 const app = express();
-app.set('trust proxy', 1);
-// The current frontend uses inline handlers/styles, so keep CSP off for now.
-app.use(helmet({
-  contentSecurityPolicy: false,
-}));
+app.set('trust proxy', 1); // ✅ already correct position — just confirm it's BEFORE helmet
+app.use(helmet({ contentSecurityPolicy: false }));
 
 const defaultClientUrls = [
   'http://localhost:5500',
