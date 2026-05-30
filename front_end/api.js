@@ -3,7 +3,7 @@
    ============================================================ */
 
 (function () {
-  const LOCAL_API_BASE = 'http://localhost:5000/api';
+  const LOCAL_API_BASE = 'http://localhost:5001/api';
 
   function isLocalPage() {
     return ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
@@ -189,7 +189,12 @@
   async function dashboardAnalytics(days = 30) {
     return api(`/dashboard/analytics?days=${days}`);
   }
-
+async function uploadResume(formData) {
+  return api('/resume/upload', {
+    method: 'POST',
+    body: formData
+  });
+}
   /* ---------- guards ---------- */
   function requireAuth() {
     if (!isLoggedIn()) window.location.href = 'index.html';
@@ -257,6 +262,7 @@
     API_BASE,
     api,
     apiHealth,
+    uploadResume,
     setApiBase,
     getToken,
     setToken,

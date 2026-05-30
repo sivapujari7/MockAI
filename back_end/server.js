@@ -93,6 +93,10 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/interviews', require('./routes/interviews'));
+app.use(
+  "/api/resume",
+  require("./routes/resume")
+);
 app.use('/api/dashboard', require('./routes/dashboard'));
 
 const frontendDir = path.join(__dirname, '..', 'front_end');

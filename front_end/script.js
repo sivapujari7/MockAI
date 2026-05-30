@@ -522,3 +522,45 @@ function initBackendActions() {
 }
 
 initBackendActions();
+const uploadBtn = document.getElementById("uploadResumeBtn");
+
+if (uploadBtn) {
+  uploadBtn.addEventListener("click", async () => {
+
+    const file =
+      document.getElementById("resumeFile").files[0];
+
+    if (!file) {
+      alert("Select a resume first");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("resume", file);
+
+    const response = await fetch(
+      "http://localhost:5001/api/resume/upload",
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+    const data = await response.json();
+
+    console.log(data);
+
+    document.getElementById("resumeResult").innerHTML = `
+      <h3>ATS Score: ${data.analysis.atsScore}%</h3>
+
+      <p><b>Skills:</b>
+      ${data.analysis.skillsFound.join(", ")}</p>
+
+      <p><b>Missing Skills:</b>
+      ${data.analysis.missingSkills.join(", ")}</p>
+
+      <p><b>Suggestions:</b>
+      ${data.analysis.improvements.join(", ")}</p>
+    `;
+  });
+}

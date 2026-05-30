@@ -1,5 +1,7 @@
-const { generateInterviewResponse } =
-  require("../services/aiService");
+const {
+  generateInterviewResponse,
+  generateInterviewFeedback
+} = require("../services/aiService");
 const Interview = require('../models/interview');
 const User = require('../models/User');
 const { sendInterviewCompleteEmail } = require('../utils/email');
@@ -173,7 +175,21 @@ exports.sendMessage = async (req, res, next) => {
     interview.questionsAnswered += 1;
 
     // Generate live feedback for this message
-    const liveFeedback = generateFeedback(message);
+   let liveFeedback;
+
+try {
+  const feedbackText =
+    await generateInterviewFeedback(
+      interview.jobRole,
+      message
+    );
+
+  liveFeedback = JSON.parse(feedbackText);
+} catch (err) {
+  console.log("AI feedback error:", err.message);
+
+  liveFeedback = generateFeedback(message);
+}
 
     // Generate AI follow-up
     const questions = questionBank[interview.interviewType] || questionBank.mixed;

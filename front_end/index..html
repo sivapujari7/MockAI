@@ -289,11 +289,24 @@
               <div class="role-chip">UI/UX Designer</div>
             </div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;margin-top:16px;font-weight:500;">Upload Resume</div>
-            <div class="resume-upload">
-              <div class="upload-icon">📂</div>
-              <div class="upload-text">Drag & drop your resume here</div>
-              <div class="upload-cta">or click to browse · PDF, DOCX</div>
-            </div>
+           <div class="resume-upload">
+  <input
+    type="file"
+    id="resumeFile"
+    accept=".pdf,.doc,.docx"
+    style="margin-bottom:10px;"
+  >
+
+  <button
+    id="uploadResumeBtn"
+    class="start-btn"
+    type="button"
+  >
+    📄 Analyze Resume
+  </button>
+
+  <div id="resumeResult"></div>
+</div>
             <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
               <div class="role-chip active" style="font-size:12px">🏢 FAANG</div>
               <div class="role-chip" style="font-size:12px">🚀 Startup</div>
