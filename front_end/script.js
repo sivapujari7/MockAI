@@ -14,28 +14,7 @@ window.addEventListener('load', () => {
     setTimeout(() => { l.style.display = 'none'; }, 600);
   }, 1800);
 });
-
-/* ════════════════════════════════════
-   2. CUSTOM CURSOR
-════════════════════════════════════ */
-const dot = document.getElementById('cursor-dot');
-const ring = document.getElementById('cursor-ring');
-let mx = 0, my = 0, rx = 0, ry = 0;
-document.addEventListener('mousemove', e => {
-  mx = e.clientX; my = e.clientY;
-  if (dot) { dot.style.left = mx + 'px'; dot.style.top = my + 'px'; }
-});
-function animateRing() {
-  rx += (mx - rx) * 0.12; ry += (my - ry) * 0.12;
-  if (ring) { ring.style.left = rx + 'px'; ring.style.top = ry + 'px'; }
-  requestAnimationFrame(animateRing);
-}
-animateRing();
-document.querySelectorAll('a,button,.feat-card,.role-chip,.quick-chip,.try-chip,.ds-item,.dash-tab,.faq-q').forEach(el => {
-  el.addEventListener('mouseenter', () => { if(ring){ring.style.width='48px';ring.style.height='48px';ring.style.borderColor='rgba(99,102,241,0.8)'} });
-  el.addEventListener('mouseleave', () => { if(ring){ring.style.width='32px';ring.style.height='32px';ring.style.borderColor='rgba(99,102,241,0.5)'} });
-});
-
+ 
 /* ════════════════════════════════════
    3. THREE.JS 3D BACKGROUND
 ════════════════════════════════════ */
@@ -947,7 +926,12 @@ const VE = {
   silenceTimer:    null,
   silenceDelay:    1800,
   isStarting:      false,         // guard against double-start
-  kaTimer:         null,          // TTS keepalive interval
+  kaTimer:         null, 
+    audioCtx: null,
+  analyser: null,
+  micStream: null,
+  vadRunning: false,
+  speechFrames: 0,         // TTS keepalive interval
 };
 
 /* ── Pick female voices (called once + on voiceschanged) ── */
@@ -979,6 +963,70 @@ if (VE.synth) {
    No keepalive loop — use single utterance per chunk with
    a watchdog timer that pokes synth if it stalls.
 ════════════════════ */
+function VE_startBargeMonitor() {
+
+  if (VE.vadRunning) return;
+
+  VE.vadRunning = true;
+
+  const data = new Uint8Array(
+    VE.analyser.frequencyBinCount
+  );
+
+  function check() {
+
+    if (!VE.active) {
+      requestAnimationFrame(check);
+      return;
+    }
+
+    if (VE.phase === 'speaking') {
+
+      VE.analyser.getByteFrequencyData(data);
+
+      let avg = 0;
+
+      for (let i = 0; i < data.length; i++) {
+        avg += data[i];
+      }
+
+      avg /= data.length;
+
+      if (avg > 18) {
+        VE.speechFrames++;
+      } else {
+        VE.speechFrames = 0;
+      }
+
+      if (VE.speechFrames > 11) {
+
+        console.log("BARGE IN DETECTED");
+
+        VE_synthStop();
+
+VE.finalText = '';
+VE.interimText = '';
+
+VE_setPhase('listening');
+VE_setStatus('Listening...');
+
+try {
+  VE.rec?.stop();
+} catch(e) {}
+
+setTimeout(() => {
+  VE_doListen();
+}, 200);
+
+        VE.speechFrames = 0;
+      }
+    }
+
+    requestAnimationFrame(check);
+  }
+
+  check();
+}
 function VE_speak(rawText, onDone) {
   if (!rawText?.trim()) { onDone?.(); return; }
 
@@ -992,6 +1040,7 @@ function VE_speak(rawText, onDone) {
     .trim();
 
   VE_setPhase('speaking');
+  VE_startBargeMonitor();
   // Allow interruption while AI talks
 console.log("STARTING INTERRUPT LISTENER");
 
@@ -1024,9 +1073,26 @@ if (!VE.rec) {
     const isTE   = VE.detectedLang === 'te-IN';
     utt.voice    = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEN) : VE.femaleVoiceEN;
     utt.lang     = isTE ? 'te-IN' : 'en-US';
-    utt.rate     = 0.9;
-    utt.pitch    = 1.15;
+    utt.rate     = 1.0;
+    utt.pitch    = 1.35;
     utt.volume   = 1.0;
+
+// Question tone
+if (chunks[idx].includes('?')) {
+  utt.pitch = 1.29;
+}
+
+// Positive feedback tone
+if (/great|excellent|good answer|well done/i.test(chunks[idx])) {
+  utt.pitch = 1.38;
+  utt.rate = 1.0;
+}
+
+// Technical tone
+if (/algorithm|complexity|database|system design|architecture/i.test(chunks[idx])) {
+  utt.pitch = 1.0;
+  utt.rate = 1.0;
+}
 
     utt.onstart  = () => {
       // Watchdog: if synth freezes (Chrome bug), poke it after 12s
@@ -1252,7 +1318,7 @@ function VE_doListen() {
     if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
       try { VE.rec?.stop(); } catch(e) {}
     }
-  }, 7000); // max listen window — prevents forever-open mic
+  }, 2500); // max listen window — prevents forever-open mic
 }
 
 function VE_stopListening() {
@@ -1360,11 +1426,18 @@ const langPrefix =
   VE.userLanguage === 'telugu'
     ? '[LANGUAGE=telugu] '
     : '[LANGUAGE=english] ';
+    const isQuestion =
+  /\?|what|why|how|when|where|who|can you|could you|explain|tell me/i.test(text);
 
+const finalMessage =
+  isQuestion
+    ? '[USER_QUESTION] ' + langPrefix + text
+    : langPrefix + text;
 const data = await interviewMessage(
   VE.sessionId,
-  langPrefix + text
+  finalMessage
 );
+
 
     if (data.feedback) {
       VE_updateScores(data.feedback);
@@ -1461,6 +1534,28 @@ document.getElementById('vGrantMicBtn')?.addEventListener('click', async () => {
 /* ════════════════════
    BEGIN SESSION
 ════════════════════ */
+async function VE_initBargeIn() {
+
+  if (VE.audioCtx) return;
+
+  VE.micStream = await navigator.mediaDevices.getUserMedia({
+    audio: true
+  });
+
+  VE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  const source = VE.audioCtx.createMediaStreamSource(
+    VE.micStream
+  );
+
+  VE.analyser = VE.audioCtx.createAnalyser();
+  VE.analyser.fftSize = 1024;
+
+  source.connect(VE.analyser);
+
+  console.log("BARGE-IN READY");
+}
+
 async function VE_beginSession() {
   VE_setPhase('processing');
   VE_setStatus('Connecting to Priya...');
@@ -1468,6 +1563,7 @@ async function VE_beginSession() {
   const box = document.getElementById('vaiSpeechText');
   if (box) box.textContent = '';
   VE_showTranscript('');
+  await VE_initBargeIn();
 
   try {
     const started = await interviewStart('Software Engineer', 'General', VE.mode, 'intermediate');

@@ -127,6 +127,12 @@ async function generateInterviewResponse({
 'Do not reveal scores during the interview.',
 'Keep the interview realistic and adaptive like a human interviewer.',
 
+'If the user message starts with [USER_QUESTION]:',
+ 'Answer the user\'s question naturally.',
+ 'Be conversational.',
+  'After answering, continue the interview.',
+'Do not treat it as an interview answer.',
+
   'LANGUAGE RULES:',
   'If the candidate asks for Telugu, speaks Telugu, or uses [LANGUAGE=telugu], continue the entire interview in Telugu.',
   'Ask questions in Telugu.',
