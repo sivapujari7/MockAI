@@ -4,7 +4,7 @@
    ============================================================ */
 
 (function () {
-  const LOCAL_API_BASE = 'http://localhost:5001/api';
+ const LOCAL_API_BASE = 'http://localhost:10000/api';
 
   function isLocalPage() {
     return ['localhost', '127.0.0.1', ''].includes(window.location.hostname);

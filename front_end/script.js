@@ -999,6 +999,7 @@ function VE_speak(rawText, onDone) {
   let watchdog = null;
 
   function speakNext() {
+    console.log("Speaking chunk", idx);
     clearInterval(watchdog);
     if (!VE.active || idx >= chunks.length) {
       VE_synthStop();
@@ -1026,11 +1027,29 @@ function VE_speak(rawText, onDone) {
     };
 
     utt.onend = () => {
-      clearInterval(watchdog);
-      idx++;
-      // Small gap between sentences — more natural
-      setTimeout(speakNext, 60);
-    };
+  console.log("TTS ENDED");
+
+  clearInterval(watchdog);
+  idx++;
+
+  if (idx >= chunks.length) {
+    console.log("ALL CHUNKS COMPLETE");
+
+    if (VE.active) {
+      VE_setStatus("Listening...");
+      VE_setPhase("listening");
+
+      setTimeout(() => {
+        VE_doListen();
+      }, 300);
+    }
+
+    onDone?.();
+    return;
+  }
+
+  setTimeout(speakNext, 60);
+};
 
     utt.onerror = (e) => {
       clearInterval(watchdog);
@@ -1044,6 +1063,21 @@ function VE_speak(rawText, onDone) {
     };
 
     VE.synth.speak(utt);
+    console.log("VOICE:", utt.voice?.name);
+console.log("LANG:", utt.lang);
+    setTimeout(() => {
+  if (
+    VE.phase === 'speaking' &&
+    !VE.synth.speaking
+  ) {
+    console.warn("TTS timeout fallback");
+
+    VE_setPhase("listening");
+    VE_setStatus("Listening...");
+
+    VE_doListen();
+  }
+}, 60000);
   }
 
   speakNext();
@@ -1092,6 +1126,9 @@ function VE_createRecognition() {
   rec.lang            = VE.detectedLang;
 
   rec.onresult = (e) => {
+
+     console.log("VOICE RESULT:", e.results[0][0].transcript);
+
     VE.interimText = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
@@ -1278,7 +1315,22 @@ async function VE_submitAnswer(text) {
   if (box) box.innerHTML = '<span style="opacity:.5;font-style:italic">Thinking...</span>';
 
   try {
-    const data = await interviewMessage(VE.sessionId, text);
+   // Detect Telugu request
+if (/telugu|తెలుగు|తెలుగులో|మాట్లాడు|matladu/i.test(text)) {
+  VE.detectedLang = 'te-IN';
+  VE.userLanguage = 'telugu';
+  VE_updateLangBadge();
+}
+
+const langPrefix =
+  VE.userLanguage === 'telugu'
+    ? '[LANGUAGE=telugu] '
+    : '[LANGUAGE=english] ';
+
+const data = await interviewMessage(
+  VE.sessionId,
+  langPrefix + text
+);
 
     if (data.feedback) {
       VE_updateScores(data.feedback);
@@ -1382,10 +1434,14 @@ async function VE_beginSession() {
 
     const firstAIMsg = started.interview?.messages?.find(m => m.role === 'ai');
     const opener = firstAIMsg?.content || VE_getOpener();
+    const shortOpener =
+  opener.length > 200
+    ? opener.substring(0, 200)
+    : opener;
 
-    addAIMsg(opener, false);
+    addAIMsg(shortOpener, false);
     VE_setStatus(VE_STATUS.speaking);
-    VE_speak(opener, () => {
+    VE_speak(shortOpener, () => {
       if (VE.active) {
         VE_setStatus(VE_STATUS.listening);
         VE_doListen();
