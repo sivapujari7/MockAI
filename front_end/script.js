@@ -992,6 +992,19 @@ function VE_speak(rawText, onDone) {
     .trim();
 
   VE_setPhase('speaking');
+  // Allow interruption while AI talks
+console.log("STARTING INTERRUPT LISTENER");
+
+if (!VE.rec) {
+  VE.rec = VE_createRecognition();
+
+  try {
+    VE.rec.start();
+    console.log("INTERRUPT LISTENER STARTED");
+  } catch(e) {
+    console.log("INTERRUPT LISTENER ERROR", e);
+  }
+}
   VE_showSpeechBox(rawText);
 
   const chunks = VE_splitText(text);
@@ -1084,6 +1097,7 @@ console.log("LANG:", utt.lang);
 }
 
 function VE_synthStop() {
+  console.log("AI SPEECH STOPPED");
   clearInterval(VE.kaTimer);
   VE.kaTimer = null;
   try { VE.synth?.cancel(); } catch(e) {}
@@ -1126,7 +1140,27 @@ function VE_createRecognition() {
   rec.lang            = VE.detectedLang;
 
   rec.onresult = (e) => {
+    // User interrupted AI
+    console.log("PHASE WHEN RESULT ARRIVES:", VE.phase);
+if (VE.phase === 'speaking') {
 
+  console.log('USER INTERRUPTED AI');
+
+  VE_synthStop();
+
+  VE_setPhase('listening');
+  VE_setStatus('Listening...');
+
+  const transcript = e.results[e.resultIndex][0].transcript;
+
+  VE.finalText = transcript;
+
+  setTimeout(() => {
+    VE_submitAnswer(transcript);
+  }, 100);
+
+  return;
+}
      console.log("VOICE RESULT:", e.results[0][0].transcript);
 
     VE.interimText = '';
@@ -1185,7 +1219,7 @@ function VE_createRecognition() {
 
 function VE_doListen() {
   if (!VE.active || VE.isStarting) return;
-  if (VE.phase === 'speaking') return; // don't interrupt AI
+  
 
   VE.isStarting = true;
   VE.finalText  = '';
@@ -1383,6 +1417,8 @@ function VE_updateScores(fb) {
    OPEN MODAL
 ════════════════════ */
 window.startVoiceInterview = function() {
+  VE.active = false;
+VE.sessionId = null;
   if (!isLoggedIn?.()) {
     openAuthModal('login');
     showToast('Sign in to use Voice Interview.', 'info');
@@ -1402,14 +1438,20 @@ window.startVoiceInterview = function() {
 ════════════════════ */
 document.getElementById('vGrantMicBtn')?.addEventListener('click', async () => {
   const btn = document.getElementById('vGrantMicBtn');
+
   setLoading(btn, true);
+
   try {
     await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Show interview screen
+
     document.getElementById('vScreenPermission').style.display = 'none';
     document.getElementById('vScreenInterview').style.display  = 'flex';
+
     VE.active = true;
+
     await VE_beginSession();
+
+    setLoading(btn, false); // ADD THIS
   } catch(err) {
     setLoading(btn, false);
     showToast('Microphone denied. Enable it in browser settings.', 'error');
@@ -1486,6 +1528,8 @@ document.getElementById('vtypeInput')?.addEventListener('keydown', e => {
    Ensures reopening always works fresh
 ════════════════════ */
 window.closeVoiceModal = function() {
+  const btn = document.getElementById('vGrantMicBtn');
+setLoading(btn, false);
   // 1. Kill all audio immediately
   VE_synthStop();
 
