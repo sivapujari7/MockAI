@@ -992,13 +992,13 @@ function VE_startBargeMonitor() {
 
       avg /= data.length;
 
-      if (avg > 18) {
+      if (avg > 22) {
         VE.speechFrames++;
       } else {
         VE.speechFrames = 0;
       }
 
-      if (VE.speechFrames > 11) {
+      if (VE.speechFrames > 15) {
 
         console.log("BARGE IN DETECTED");
 
@@ -1074,8 +1074,8 @@ if (!VE.rec) {
     utt.voice    = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEN) : VE.femaleVoiceEN;
     utt.lang     = isTE ? 'te-IN' : 'en-US';
     utt.rate     = 1.0;
-    utt.pitch    = 1.35;
-    utt.volume   = 1.0;
+    utt.pitch    = 1.25;
+    utt.volume   = 1.5;
 
 // Question tone
 if (chunks[idx].includes('?')) {
@@ -1090,7 +1090,7 @@ if (/great|excellent|good answer|well done/i.test(chunks[idx])) {
 
 // Technical tone
 if (/algorithm|complexity|database|system design|architecture/i.test(chunks[idx])) {
-  utt.pitch = 1.0;
+  utt.pitch = 1.2;
   utt.rate = 1.0;
 }
 
@@ -1200,7 +1200,7 @@ function VE_createRecognition() {
   }
 
   const rec = new SR();
-  rec.continuous      = false;   // single utterance mode — more reliable
+  rec.continuous      = true;   // single utterance mode — more reliable
   rec.interimResults  = true;    // must be true or Chrome drops some finals
   rec.maxAlternatives = 1;
   rec.lang            = VE.detectedLang;
@@ -1318,7 +1318,7 @@ function VE_doListen() {
     if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
       try { VE.rec?.stop(); } catch(e) {}
     }
-  }, 2500); // max listen window — prevents forever-open mic
+  }, 3500); // max listen window — prevents forever-open mic
 }
 
 function VE_stopListening() {
