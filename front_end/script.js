@@ -919,385 +919,438 @@ if (document.readyState !== 'loading') {
 }
 
 /* ════════════════════════════════════════════════════
-   VOICE INTERVIEW ENGINE
-   Uses Web Speech API — free, no API key needed
-   - SpeechSynthesis  → AI speaks questions
-   - SpeechRecognition → User speaks answers
-════════════════════════════════════════════════════ */
 
-/* ── State ── */
-const Voice = {
-  active:       false,
-  interviewId:  null,
-  mode:         'mixed',
-  recognition:  null,
-  synth:        window.speechSynthesis,
-  isAISpeaking: false,
-  isListening:  false,
-  transcript:   '',
-  silenceTimer: null,
-  preferredVoice: null,
+/* ═══════════════════════════════════════════════════════
+   VOICE INTERVIEW ENGINE v3 — ChatGPT Voice Mode Style
+   - Auto language detection (English + Telugu)
+   - No manual language buttons
+   - No mic button — fully hands-free
+   - Silence detection → auto submit
+   - Only final transcript shown (no interim flicker)
+   - Fast chunked TTS with female warm voice
+   - Auth-gated: must be signed in
+═══════════════════════════════════════════════════════ */
+
+const VE = {
+  /* session */
+  active:        false,
+  sessionId:     null,
+  mode:          'mixed',
+
+  /* speech */
+  synth:         window.speechSynthesis,
+  recognition:   null,
+  femaleVoiceEn: null,
+  femaleVoiceTE: null,
+
+  /* state */
+  phase:         'idle',   // idle | listening | processing | speaking
+  detectedLang:  'en-US',  // auto-detected, starts English
+  silenceMs:     1800,     // ms of silence before submitting
+  silenceTimer:  null,
+  finalText:     '',       // committed final transcript
+  restartAfterEnd: false,
+
+  /* noise filter */
+  minWords: 2,             // ignore single noise words
 };
 
-/* ── Pick best available TTS voice ── */
-function loadVoices() {
-  const voices = Voice.synth.getVoices();
-  // Prefer natural-sounding English voices
-  const preferred = [
-    'Google US English', 'Google UK English Male',
-    'Microsoft David', 'Microsoft Mark', 'Alex',
-    'Daniel', 'Aaron',
+/* ─── Pick best female voices once ─── */
+function VE_pickVoices() {
+  if (!VE.synth) return;
+  const all = VE.synth.getVoices();
+
+  const enPref = [
+    'Samantha','Karen','Moira','Tessa','Fiona','Ava','Allison','Victoria',
+    'Google UK English Female','Microsoft Aria Online (Natural)',
+    'Microsoft Jenny Online (Natural)','Microsoft Aria','Microsoft Zira',
   ];
-  Voice.preferredVoice =
-    preferred.reduce((found, name) => found || voices.find(v => v.name === name), null) ||
-    voices.find(v => v.lang.startsWith('en')) ||
-    voices[0] || null;
+  VE.femaleVoiceEn = enPref.reduce((f,n)=>f||all.find(v=>v.name===n),null)
+    || all.find(v=>v.lang.startsWith('en')&&/female|woman/i.test(v.name))
+    || all.find(v=>v.lang==='en-GB')
+    || all.find(v=>v.lang.startsWith('en'))
+    || null;
+
+  const tePref = ['Google తెలుగు','Google Telugu','Lekha'];
+  VE.femaleVoiceTE = tePref.reduce((f,n)=>f||all.find(v=>v.name===n),null)
+    || all.find(v=>v.lang==='te-IN'||v.lang==='te')
+    || null;
 }
-if (Voice.synth) {
-  loadVoices();
-  Voice.synth.onvoiceschanged = loadVoices;
+if (VE.synth) {
+  VE_pickVoices();
+  VE.synth.onvoiceschanged = VE_pickVoices;
 }
 
-/* ── AI speaks text ── */
-function aiSpeak(text, onDone) {
-  if (!Voice.synth || !text) { onDone?.(); return; }
+/* ─── Detect language from text ─── */
+function VE_detectLang(text) {
+  // Telugu unicode range: \u0C00-\u0C7F
+  const teluguChars = (text.match(/[\u0C00-\u0C7F]/g) || []).length;
+  const totalChars  = text.replace(/\s/g,'').length;
 
-  // Cancel any ongoing speech
-  Voice.synth.cancel();
+  // Telugu keyword triggers
+  const teluguWords = /\b(nenu|meeru|mee|idi|adi|cheppandi|cheppу|telugu|lo cheppandi|ante|kaadu|avunu|chettu|neeku|maku)\b/i;
 
-  Voice.isAISpeaking = true;
-  setVaiState('speaking');
+  if (teluguChars > 2 || (totalChars > 0 && teluguChars/totalChars > 0.15) || teluguWords.test(text)) {
+    return 'te-IN';
+  }
+  // Detect explicit switch request
+  if (/telugu|in telugu|switch to telugu|telugulo|thelugu/i.test(text)) return 'te-IN';
+  if (/in english|switch to english|english lo|back to english/i.test(text)) return 'en-US';
+  return null; // no change
+}
 
-  // Display text in speech box
-  const box = document.getElementById('vaiSpeechText');
-  if (box) box.textContent = text;
-  setVStatus('Speaking...');
+/* ─── SET PHASE ─── */
+function VE_setPhase(phase) {
+  VE.phase = phase;
+  const statusEl = document.getElementById('vaiStatus');
+  const wrapEl   = document.getElementById('vaiWrap');
+  const box      = document.getElementById('vaiSpeechBox');
 
-  const clean = text
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/[*_`#]/g, '')
+  // Remove all states
+  wrapEl?.classList.remove('speaking','listening','thinking');
+  box?.classList.remove('ai-box','user-box');
+
+  const labels = {
+    listening:  '● Listening...',
+    processing: '⟳ Processing...',
+    speaking:   '▶ Priya is speaking...',
+    idle:       '',
+  };
+  if (statusEl) statusEl.textContent = labels[phase] || '';
+
+  if (phase === 'speaking')   { wrapEl?.classList.add('speaking');  box?.classList.add('ai-box'); }
+  if (phase === 'listening')  { wrapEl?.classList.add('listening'); box?.classList.add('user-box'); }
+  if (phase === 'processing') { wrapEl?.classList.add('thinking'); }
+}
+
+/* ─── TYPEWRITER for speech box ─── */
+function VE_typewrite(el, text, onDone) {
+  if (!el) { onDone?.(); return; }
+  el.textContent = '';
+  const clean = text.replace(/\*\*(.*?)\*\*/g,'$1').replace(/[*_`#]/g,'');
+  let i = 0;
+  const speed = Math.max(14, Math.min(28, 2200 / Math.max(clean.length,1)));
+  const t = setInterval(()=>{
+    el.textContent += clean[i++];
+    if (i >= clean.length) { clearInterval(t); onDone?.(); }
+  }, speed);
+}
+
+/* ─── SPEAK ─── */
+function VE_speak(rawText, onDone) {
+  if (!VE.synth || !rawText?.trim()) { onDone?.(); return; }
+  VE.synth.cancel();
+
+  const clean = rawText
+    .replace(/\*\*(.*?)\*\*/g,'$1')
+    .replace(/[*_`#\[\]]/g,'')
+    .replace(/\n+/g,' ')
     .trim();
 
-  const utt = new SpeechSynthesisUtterance(clean);
-  utt.voice  = Voice.preferredVoice;
-  utt.rate   = 0.92;   // slightly slower = clearer, more natural
-  utt.pitch  = 1.02;
-  utt.volume = 1;
+  VE_setPhase('speaking');
+  const box = document.getElementById('vaiSpeechText');
+  VE_typewrite(box, rawText, null);
 
-  utt.onend = () => {
-    Voice.isAISpeaking = false;
-    setVaiState('idle');
-    setVStatus('Your turn — speak or type below');
-    onDone?.();
-  };
-  utt.onerror = () => {
-    Voice.isAISpeaking = false;
-    setVaiState('idle');
-    onDone?.();
-  };
-
-  // Chrome bug: long utterances get cut off — chunk it
-  const chunks = splitIntoChunks(clean, 180);
-  speakChunks(chunks, onDone);
+  // Smart sentence split for smooth TTS
+  const chunks = VE_split(clean);
+  VE_speakChunks(chunks, 0, onDone);
 }
 
-function splitIntoChunks(text, maxLen) {
-  const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
-  const chunks = []; let current = '';
-  sentences.forEach(s => {
-    if ((current + s).length > maxLen && current) { chunks.push(current.trim()); current = s; }
-    else current += s;
+function VE_split(text) {
+  const sents = text.match(/[^.!?;]+[.!?;]*/g) || [text];
+  const out=[]; let buf='';
+  sents.forEach(s=>{
+    if ((buf+s).length>110 && buf){ out.push(buf.trim()); buf=s; }
+    else buf+=s;
   });
-  if (current.trim()) chunks.push(current.trim());
-  return chunks;
+  if (buf.trim()) out.push(buf.trim());
+  return out.filter(Boolean);
 }
 
-function speakChunks(chunks, onAllDone) {
-  if (!chunks.length) { onAllDone?.(); return; }
-  const utt = new SpeechSynthesisUtterance(chunks[0]);
-  utt.voice = Voice.preferredVoice;
-  utt.rate  = 0.92; utt.pitch = 1.02; utt.volume = 1;
-  utt.onend = () => speakChunks(chunks.slice(1), onAllDone);
-  utt.onerror = () => speakChunks(chunks.slice(1), onAllDone);
-  Voice.synth.speak(utt);
+function VE_speakChunks(chunks, idx, onDone) {
+  if (!VE.active || idx >= chunks.length) {
+    VE.synth?.cancel();
+    onDone?.();
+    return;
+  }
+  const utt    = new SpeechSynthesisUtterance(chunks[idx]);
+  const isTE   = VE.detectedLang === 'te-IN';
+  utt.voice    = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEn) : VE.femaleVoiceEn;
+  utt.lang     = isTE ? 'te-IN' : 'en-US';
+  utt.rate     = 0.88;
+  utt.pitch    = 1.2;   // warm, feminine
+  utt.volume   = 1;
+  utt.onend    = ()=> VE_speakChunks(chunks, idx+1, onDone);
+  utt.onerror  = ()=> VE_speakChunks(chunks, idx+1, onDone);
+  VE.synth.speak(utt);
+  // Chrome keepalive
+  if (idx === 0) {
+    const ka = setInterval(()=>{
+      if (VE.phase !== 'speaking'){ clearInterval(ka); return; }
+      VE.synth.pause(); VE.synth.resume();
+    }, 9000);
+  }
 }
 
-/* ── Visual state of AI avatar ── */
-function setVaiState(state) {
-  const wrap = document.getElementById('vaiWrap');
-  if (!wrap) return;
-  wrap.classList.remove('speaking', 'listening', 'idle');
-  if (state !== 'idle') wrap.classList.add(state);
-}
-function setVStatus(text) {
-  const el = document.getElementById('vaiStatus');
-  if (el) el.textContent = text;
+/* ─── SPEECH RECOGNITION ─── */
+function VE_initRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    showToast('Voice interview needs Chrome or Edge browser.','warning');
+    return false;
+  }
+  VE.recognition               = new SR();
+  VE.recognition.continuous    = true;
+  VE.recognition.interimResults = false;  // ONLY final results — no flicker
+  VE.recognition.maxAlternatives = 3;     // pick best of 3 alternatives
+  VE.recognition.lang          = 'en-US'; // starts English, auto-switches
+
+  VE.recognition.onresult = (e) => {
+    let best = '';
+    // Pick highest-confidence alternative
+    const result = e.results[e.resultIndex];
+    if (!result?.isFinal) return;
+    let maxConf = -1;
+    for (let i=0; i<result.length; i++) {
+      if (result[i].confidence > maxConf) {
+        maxConf = result[i].confidence;
+        best = result[i].transcript;
+      }
+    }
+    best = best.trim();
+    if (!best) return;
+
+    VE.finalText += (VE.finalText ? ' ' : '') + best;
+
+    // Show final only in transcript box
+    const tu = document.getElementById('vuserTranscript');
+    if (tu) tu.textContent = VE.finalText;
+
+    // Detect language change
+    const detected = VE_detectLang(VE.finalText);
+    if (detected && detected !== VE.detectedLang) {
+      VE.detectedLang = detected;
+      VE_updateLangIndicator();
+      // Update recognition language live
+      try { VE.recognition.lang = detected; } catch(e2){}
+    }
+
+    // Silence timer — reset on each final chunk
+    clearTimeout(VE.silenceTimer);
+    const words = VE.finalText.trim().split(/\s+/).length;
+    // Adaptive silence: short answers wait longer
+    const delay = words < 5 ? 2200 : words < 15 ? 1800 : 1400;
+    VE.silenceTimer = setTimeout(()=>{
+      if (VE.phase === 'listening' && VE.finalText.trim().length > 0) {
+        VE_submitAnswer(VE.finalText.trim());
+      }
+    }, delay);
+  };
+
+  VE.recognition.onerror = (e) => {
+    if (e.error === 'no-speech') {
+      // No speech detected — restart quietly
+      if (VE.phase === 'listening') VE_startListening();
+      return;
+    }
+    if (e.error === 'aborted') return;
+    console.warn('SR error:', e.error);
+    // Reconnect on network/audio errors
+    if (['network','audio-capture','service-not-allowed'].includes(e.error)) {
+      setTimeout(()=>{ if(VE.phase==='listening') VE_startListening(); }, 1000);
+    }
+  };
+
+  VE.recognition.onend = () => {
+    // Auto-restart unless we intentionally stopped
+    if (VE.phase === 'listening' && VE.active) {
+      setTimeout(()=>{
+        if (VE.phase==='listening' && VE.active) {
+          try { VE.recognition.start(); } catch(e2){}
+        }
+      }, 200);
+    }
+  };
+  return true;
 }
 
-/* ── Start voice interview ── */
+function VE_startListening() {
+  if (!VE.recognition || !VE.active) return;
+  VE.finalText = '';
+  VE_setPhase('listening');
+  const tu = document.getElementById('vuserTranscript');
+  if (tu) tu.textContent = '';
+  VE.recognition.lang = VE.detectedLang;
+  try { VE.recognition.start(); } catch(e){}
+}
+
+function VE_stopListening() {
+  clearTimeout(VE.silenceTimer);
+  try { VE.recognition?.stop(); } catch(e){}
+}
+
+function VE_updateLangIndicator() {
+  const el = document.getElementById('vLangIndicator');
+  if (!el) return;
+  const isTE = VE.detectedLang === 'te-IN';
+  el.textContent  = isTE ? '🇮🇳 తెలుగు' : '🇬🇧 English';
+  el.style.color  = isTE ? '#f59e0b' : '#06b6d4';
+}
+
+/* ─── SUBMIT ANSWER TO BACKEND ─── */
+async function VE_submitAnswer(text) {
+  if (!text || VE.phase !== 'listening') return;
+  VE_stopListening();
+
+  // Noise filter — ignore very short or non-linguistic noise
+  const words = text.trim().split(/\s+/).length;
+  if (words < VE.minWords && !/[.!?]/.test(text)) {
+    // Too short — restart listening
+    VE_startListening();
+    return;
+  }
+
+  VE_setPhase('processing');
+  addAIMsg(text, true); // mirror in text panel
+
+  // Show processing in speech box
+  const box = document.getElementById('vaiSpeechText');
+  if (box) box.innerHTML = '<span style="color:var(--dim);font-style:italic">Processing your answer...</span>';
+
+  try {
+    const data = await interviewMessage(VE.sessionId, text);
+
+    if (data.feedback) {
+      VE_updateScores(data.feedback);
+      updateFeedback(data.feedback);
+    }
+
+    if (data.aiMessage) {
+      addAIMsg(data.aiMessage, false);
+      // Detect if AI reply is in Telugu
+      const aiLang = VE_detectLang(data.aiMessage);
+      if (aiLang) VE.detectedLang = aiLang;
+
+      VE_speak(data.aiMessage, ()=>{
+        if (VE.active) {
+          VE.finalText = '';
+          VE_startListening();
+        }
+      });
+    }
+  } catch(err) {
+    showToast(err.message || 'AI response failed — trying again.','error');
+    VE_setPhase('idle');
+    if (box) box.textContent = 'Something went wrong. Listening again...';
+    setTimeout(()=>{ if(VE.active) VE_startListening(); }, 2000);
+  }
+}
+
+/* ─── SCORES ─── */
+function VE_updateScores(fb) {
+  [['vConfVal',fb.confidenceScore],['vCommVal',fb.communicationScore],['vTechVal',fb.technicalScore]]
+    .forEach(([id,s])=>{
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = s!=null ? s+'%' : '—';
+      el.style.color = s>=80?'#10b981':s>=60?'#6366f1':'#f59e0b';
+    });
+}
+
+/* ─── OPEN VOICE MODAL ─── */
 window.startVoiceInterview = function() {
-  Voice.mode = aiMode; // inherit current mode
-  const modal = document.getElementById('voiceModal');
-  if (modal) modal.classList.add('open');
-  document.getElementById('vScreenPermission').style.display = 'flex';
-  document.getElementById('vScreenInterview').style.display  = 'none';
-
-  // Set mode label in scores bar
-  const modeMap = { mixed:'Full', hr:'HR', technical:'Tech' };
-  const modeEl = document.getElementById('vModeVal');
-  if (modeEl) modeEl.textContent = modeMap[Voice.mode] || 'Full';
+  if (!isLoggedIn?.()) {
+    openAuthModal('login');
+    showToast('Sign in to use Voice Interview.','info');
+    return;
+  }
+  VE.mode = aiMode;
+  VE.detectedLang = 'en-US';
+  document.getElementById('voiceModal')?.classList.add('open');
+  document.body.style.overflow = 'hidden';
 };
 
-/* ── Grant mic & start ── */
-document.getElementById('vGrantMicBtn')?.addEventListener('click', async () => {
+/* ─── GRANT MIC ─── */
+document.getElementById('vGrantMicBtn')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('vGrantMicBtn');
   setLoading(btn, true);
   try {
-    await navigator.mediaDevices.getUserMedia({ audio: true });
-    initSpeechRecognition();
+    await navigator.mediaDevices.getUserMedia({ audio:true });
+    const ok = VE_initRecognition();
+    if (!ok) { setLoading(btn,false); return; }
+    // Show interview screen
     document.getElementById('vScreenPermission').style.display = 'none';
     document.getElementById('vScreenInterview').style.display  = 'flex';
-    Voice.active = true;
-    await beginVoiceInterview();
-  } catch (err) {
+    VE.active = true;
+    VE_updateLangIndicator();
+    await VE_beginSession();
+  } catch(err) {
     setLoading(btn, false);
-    showToast('Microphone access denied. Please allow mic in your browser settings.', 'error');
+    showToast('Microphone access denied. Please allow mic access in your browser settings.','error');
   }
 });
 
-/* ── Begin the actual interview ── */
-async function beginVoiceInterview() {
-  setVStatus('Connecting to AI interviewer...');
-  setVaiState('idle');
-
-  // Start interview session if not already active
-  if (!Voice.interviewId) {
-    if (!isLoggedIn?.()) {
-      // Guest mode — just use existing aiInterviewId if available
-      if (aiInterviewId) {
-        Voice.interviewId = aiInterviewId;
-      } else {
-        // Still allow but won't save
-        setVStatus('Sign in to save your session');
-      }
-    } else {
-      try {
-        const started = await interviewStart('Software Engineer', 'General', Voice.mode, 'intermediate');
-        Voice.interviewId = started.interview._id;
-        aiInterviewId = Voice.interviewId; // sync with text panel
-      } catch (err) {
-        showToast('Could not start interview: ' + err.message, 'error');
-      }
-    }
-  }
-
-  // AI speaks opening message
-  const openers = {
-    mixed:     "Hello! I'm Alex, your AI interviewer. We'll go through both behavioral and technical questions today. I'll speak each question aloud, and you can answer by voice or by typing. Let's begin. Tell me about yourself and your most impactful project so far.",
-    hr:        "Hi there! I'm Alex. Today we're focusing on behavioral questions using the STAR method. I'll ask you situational questions and I want you to walk me through your Situation, Task, Action, and Result. Ready? Let's start. Tell me about a time you demonstrated strong leadership.",
-    technical: "Hey! I'm Alex. We're diving into technical questions today — data structures, algorithms, and problem-solving. I'll read each problem aloud. You can write your solution in the code area and explain your approach verbally. Let's go. Given an array of integers, how would you find two numbers that add up to a target sum? This is the classic Two Sum problem.",
-  };
-
-  const opener = openers[Voice.mode] || openers.mixed;
-
-  // Show in speech box
+/* ─── BEGIN SESSION ─── */
+async function VE_beginSession() {
+  VE_setPhase('processing');
   const box = document.getElementById('vaiSpeechText');
-  if (box) box.textContent = opener;
-
-  aiSpeak(opener, () => {
-    // After AI speaks, automatically start listening
-    if (Voice.active) startListening();
-  });
-}
-
-/* ── Speech Recognition setup ── */
-function initSpeechRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { showToast('Speech recognition not supported in this browser. Please use Chrome.', 'warning'); return; }
-
-  Voice.recognition = new SR();
-  Voice.recognition.continuous    = true;
-  Voice.recognition.interimResults = true;
-  Voice.recognition.lang          = 'en-US';
-  Voice.recognition.maxAlternatives = 1;
-
-  Voice.recognition.onstart = () => {
-    Voice.isListening = true;
-    setVaiState('listening');
-    setVStatus('Listening... speak your answer');
-    const micBtn = document.getElementById('vmicBtn');
-    if (micBtn) micBtn.classList.add('recording');
-    const micLbl = document.getElementById('vmicLabel');
-    if (micLbl) micLbl.textContent = 'Listening...';
-  };
-
-  Voice.recognition.onresult = (event) => {
-    let interim = '', final = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) final += t;
-      else interim += t;
-    }
-    Voice.transcript += final;
-    const display = Voice.transcript + interim;
-    const tu = document.getElementById('vuserTranscript');
-    if (tu) tu.innerHTML = display || '<span class="vut-placeholder">Your answer will appear here as you speak...</span>';
-
-    // Auto-submit after 2.5s silence
-    clearTimeout(Voice.silenceTimer);
-    if (display.trim().split(' ').length >= 5) {
-      Voice.silenceTimer = setTimeout(() => {
-        if (Voice.active && Voice.isListening && Voice.transcript.trim()) {
-          stopListening();
-          submitVoiceAnswer(Voice.transcript.trim());
-        }
-      }, 2500);
-    }
-  };
-
-  Voice.recognition.onerror = (event) => {
-    if (event.error === 'no-speech') return;
-    console.warn('Speech recognition error:', event.error);
-    Voice.isListening = false;
-    setVaiState('idle');
-  };
-
-  Voice.recognition.onend = () => {
-    Voice.isListening = false;
-    const micBtn = document.getElementById('vmicBtn');
-    if (micBtn) micBtn.classList.remove('recording');
-    const micLbl = document.getElementById('vmicLabel');
-    if (micLbl) micLbl.textContent = 'Tap to Speak';
-    if (!Voice.isAISpeaking && Voice.active && !Voice.transcript.trim()) {
-      setVaiState('idle');
-      setVStatus('Tap mic or type to answer');
-    }
-  };
-}
-
-/* ── Toggle mic manually ── */
-window.toggleMic = function() {
-  if (!Voice.recognition) { showToast('Please start voice interview first.', 'info'); return; }
-  if (Voice.isAISpeaking) { showToast('Please wait for AI to finish speaking.', 'info'); return; }
-  if (Voice.isListening) {
-    stopListening();
-    if (Voice.transcript.trim()) submitVoiceAnswer(Voice.transcript.trim());
-  } else {
-    startListening();
-  }
-};
-
-function startListening() {
-  if (!Voice.recognition || Voice.isListening) return;
-  Voice.transcript = '';
-  const tu = document.getElementById('vuserTranscript');
-  if (tu) tu.innerHTML = '<span class="vut-placeholder">Listening...</span>';
-  try { Voice.recognition.start(); } catch (e) { /* already running */ }
-}
-
-function stopListening() {
-  if (Voice.recognition) try { Voice.recognition.stop(); } catch (e) {}
-  Voice.isListening = false;
-  clearTimeout(Voice.silenceTimer);
-  const micBtn = document.getElementById('vmicBtn');
-  if (micBtn) micBtn.classList.remove('recording');
-}
-
-/* ── Submit voice answer to AI ── */
-async function submitVoiceAnswer(text) {
-  if (!text || Voice.isAISpeaking) return;
-
-  setVStatus('AI is thinking...');
-  setVaiState('idle');
-  Voice.transcript = '';
-
-  // Show user answer in transcript area as sent
-  const tu = document.getElementById('vuserTranscript');
-  if (tu) tu.innerHTML = `<span style="color:var(--cyan);font-style:italic">"${text}"</span>`;
-
-  // Also add to text chat panel for continuity
-  addAIMsg(text, true);
+  if (box) box.textContent = 'Connecting to Priya...';
 
   try {
-    let data;
-    if (Voice.interviewId) {
-      data = await interviewMessage(Voice.interviewId, text);
-    } else {
-      // No session — use existing aiInterviewId or create one
-      if (!aiInterviewId) {
-        const started = await interviewStart('Software Engineer', 'General', Voice.mode, 'intermediate');
-        aiInterviewId = started.interview._id;
-        Voice.interviewId = aiInterviewId;
-      }
-      data = await interviewMessage(aiInterviewId, text);
-    }
+    const started = await interviewStart('Software Engineer','General',VE.mode,'intermediate');
+    VE.sessionId   = started.interview._id;
+    aiInterviewId  = VE.sessionId;
 
-    // Update scores
-    if (data.feedback) {
-      updateVoiceScores(data.feedback);
-      updateFeedback(data.feedback); // also update text panel
-    }
-
-    // AI speaks the response
-    if (data.aiMessage) {
-      addAIMsg(data.aiMessage, false); // also in text panel
-      const box = document.getElementById('vaiSpeechText');
-      if (box) box.textContent = data.aiMessage;
-      setVStatus('Alex is speaking...');
-      aiSpeak(data.aiMessage, () => {
-        if (Voice.active) startListening(); // auto-listen after AI speaks
+    // Opening message from AI
+    const firstMsg = started.interview?.messages?.find(m=>m.role==='ai');
+    if (firstMsg?.content) {
+      addAIMsg(firstMsg.content, false);
+      VE_speak(firstMsg.content, ()=>{
+        if (VE.active) VE_startListening();
       });
+    } else {
+      // Fallback opener
+      const openers = {
+        mixed:     "Hello! I'm Priya, your interview coach. I'm here to help you feel confident and prepared. Let's start — could you tell me a little about yourself and the role you're applying for?",
+        hr:        "Hi! I'm Priya. Today we'll practice behavioral questions. I'll guide you through each one using the STAR method. Let's begin — tell me about a time you showed strong leadership.",
+        technical: "Hi! I'm Priya. We're doing technical questions today. I'll read each problem clearly — take a moment to think before answering. First question: Given an array of integers, how would you find two numbers that add up to a target?",
+      };
+      const opener = openers[VE.mode] || openers.mixed;
+      addAIMsg(opener, false);
+      VE_speak(opener, ()=>{ if(VE.active) VE_startListening(); });
     }
-  } catch (err) {
-    showToast('AI response failed: ' + err.message, 'error');
-    setVStatus('Error — tap mic to try again');
-    setVaiState('idle');
+  } catch(err) {
+    showToast('Could not start interview: '+err.message,'error');
+    VE_setPhase('idle');
+    if (box) box.textContent = 'Could not connect. Please try again.';
   }
 }
 
-/* ── Type to send in voice modal ── */
-document.getElementById('vtypeSend')?.addEventListener('click', () => {
-  const input = document.getElementById('vtypeInput');
-  const text = input?.value.trim();
-  if (!text) return;
-  input.value = '';
-  submitVoiceAnswer(text);
-});
-document.getElementById('vtypeInput')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const text = e.target.value.trim();
-    if (!text) return;
-    e.target.value = '';
-    submitVoiceAnswer(text);
-  }
-});
-
-/* ── Update voice modal scores ── */
-function updateVoiceScores(feedback) {
-  const map = [
-    ['vConfVal', feedback.confidenceScore],
-    ['vCommVal', feedback.communicationScore],
-    ['vTechVal', feedback.technicalScore],
-  ];
-  const colors = { high: '#10b981', mid: '#6366f1', low: '#f59e0b' };
-  map.forEach(([id, score]) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = score != null ? score + '%' : '—';
-    el.style.color = score >= 80 ? colors.high : score >= 60 ? colors.mid : colors.low;
-  });
+/* ─── TYPE TO ANSWER (fallback) ─── */
+function VE_typeSubmit() {
+  const inp = document.getElementById('vtypeInput');
+  const txt = inp?.value.trim();
+  if (!txt) return;
+  inp.value = '';
+  VE_stopListening();
+  VE.finalText = txt;
+  VE_submitAnswer(txt);
 }
+document.getElementById('vtypeSend')?.addEventListener('click', VE_typeSubmit);
+document.getElementById('vtypeInput')?.addEventListener('keydown', e=>{
+  if (e.key==='Enter'){ e.preventDefault(); VE_typeSubmit(); }
+});
 
-/* ── Close voice modal ── */
+/* ─── CLOSE ─── */
 window.closeVoiceModal = function() {
-  Voice.active = false;
-  stopListening();
-  if (Voice.synth) Voice.synth.cancel();
-  clearTimeout(Voice.silenceTimer);
-  const modal = document.getElementById('voiceModal');
-  if (modal) modal.classList.remove('open');
-  setVaiState('idle');
-  Voice.interviewId = null;
-  Voice.transcript = '';
-  Voice.isAISpeaking = false;
+  VE.active = false;
+  VE_stopListening();
+  VE.synth?.cancel();
+  clearTimeout(VE.silenceTimer);
+  document.getElementById('voiceModal')?.classList.remove('open');
+  document.body.style.overflow = '';
+  VE_setPhase('idle');
+  VE.sessionId    = null;
+  VE.finalText    = '';
+  VE.detectedLang = 'en-US';
 };
