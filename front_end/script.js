@@ -917,3 +917,387 @@ if (document.readyState !== 'loading') {
   wireButtons();
   updateAuthUI();
 }
+
+/* ════════════════════════════════════════════════════
+   VOICE INTERVIEW ENGINE
+   Uses Web Speech API — free, no API key needed
+   - SpeechSynthesis  → AI speaks questions
+   - SpeechRecognition → User speaks answers
+════════════════════════════════════════════════════ */
+
+/* ── State ── */
+const Voice = {
+  active:       false,
+  interviewId:  null,
+  mode:         'mixed',
+  recognition:  null,
+  synth:        window.speechSynthesis,
+  isAISpeaking: false,
+  isListening:  false,
+  transcript:   '',
+  silenceTimer: null,
+  preferredVoice: null,
+};
+
+/* ── Pick best available TTS voice ── */
+function loadVoices() {
+  const voices = Voice.synth.getVoices();
+  // Prefer natural-sounding English voices
+  const preferred = [
+    'Google US English', 'Google UK English Male',
+    'Microsoft David', 'Microsoft Mark', 'Alex',
+    'Daniel', 'Aaron',
+  ];
+  Voice.preferredVoice =
+    preferred.reduce((found, name) => found || voices.find(v => v.name === name), null) ||
+    voices.find(v => v.lang.startsWith('en')) ||
+    voices[0] || null;
+}
+if (Voice.synth) {
+  loadVoices();
+  Voice.synth.onvoiceschanged = loadVoices;
+}
+
+/* ── AI speaks text ── */
+function aiSpeak(text, onDone) {
+  if (!Voice.synth || !text) { onDone?.(); return; }
+
+  // Cancel any ongoing speech
+  Voice.synth.cancel();
+
+  Voice.isAISpeaking = true;
+  setVaiState('speaking');
+
+  // Display text in speech box
+  const box = document.getElementById('vaiSpeechText');
+  if (box) box.textContent = text;
+  setVStatus('Speaking...');
+
+  const clean = text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/[*_`#]/g, '')
+    .trim();
+
+  const utt = new SpeechSynthesisUtterance(clean);
+  utt.voice  = Voice.preferredVoice;
+  utt.rate   = 0.92;   // slightly slower = clearer, more natural
+  utt.pitch  = 1.02;
+  utt.volume = 1;
+
+  utt.onend = () => {
+    Voice.isAISpeaking = false;
+    setVaiState('idle');
+    setVStatus('Your turn — speak or type below');
+    onDone?.();
+  };
+  utt.onerror = () => {
+    Voice.isAISpeaking = false;
+    setVaiState('idle');
+    onDone?.();
+  };
+
+  // Chrome bug: long utterances get cut off — chunk it
+  const chunks = splitIntoChunks(clean, 180);
+  speakChunks(chunks, onDone);
+}
+
+function splitIntoChunks(text, maxLen) {
+  const sentences = text.match(/[^.!?]+[.!?]*/g) || [text];
+  const chunks = []; let current = '';
+  sentences.forEach(s => {
+    if ((current + s).length > maxLen && current) { chunks.push(current.trim()); current = s; }
+    else current += s;
+  });
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+function speakChunks(chunks, onAllDone) {
+  if (!chunks.length) { onAllDone?.(); return; }
+  const utt = new SpeechSynthesisUtterance(chunks[0]);
+  utt.voice = Voice.preferredVoice;
+  utt.rate  = 0.92; utt.pitch = 1.02; utt.volume = 1;
+  utt.onend = () => speakChunks(chunks.slice(1), onAllDone);
+  utt.onerror = () => speakChunks(chunks.slice(1), onAllDone);
+  Voice.synth.speak(utt);
+}
+
+/* ── Visual state of AI avatar ── */
+function setVaiState(state) {
+  const wrap = document.getElementById('vaiWrap');
+  if (!wrap) return;
+  wrap.classList.remove('speaking', 'listening', 'idle');
+  if (state !== 'idle') wrap.classList.add(state);
+}
+function setVStatus(text) {
+  const el = document.getElementById('vaiStatus');
+  if (el) el.textContent = text;
+}
+
+/* ── Start voice interview ── */
+window.startVoiceInterview = function() {
+  Voice.mode = aiMode; // inherit current mode
+  const modal = document.getElementById('voiceModal');
+  if (modal) modal.classList.add('open');
+  document.getElementById('vScreenPermission').style.display = 'flex';
+  document.getElementById('vScreenInterview').style.display  = 'none';
+
+  // Set mode label in scores bar
+  const modeMap = { mixed:'Full', hr:'HR', technical:'Tech' };
+  const modeEl = document.getElementById('vModeVal');
+  if (modeEl) modeEl.textContent = modeMap[Voice.mode] || 'Full';
+};
+
+/* ── Grant mic & start ── */
+document.getElementById('vGrantMicBtn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('vGrantMicBtn');
+  setLoading(btn, true);
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    initSpeechRecognition();
+    document.getElementById('vScreenPermission').style.display = 'none';
+    document.getElementById('vScreenInterview').style.display  = 'flex';
+    Voice.active = true;
+    await beginVoiceInterview();
+  } catch (err) {
+    setLoading(btn, false);
+    showToast('Microphone access denied. Please allow mic in your browser settings.', 'error');
+  }
+});
+
+/* ── Begin the actual interview ── */
+async function beginVoiceInterview() {
+  setVStatus('Connecting to AI interviewer...');
+  setVaiState('idle');
+
+  // Start interview session if not already active
+  if (!Voice.interviewId) {
+    if (!isLoggedIn?.()) {
+      // Guest mode — just use existing aiInterviewId if available
+      if (aiInterviewId) {
+        Voice.interviewId = aiInterviewId;
+      } else {
+        // Still allow but won't save
+        setVStatus('Sign in to save your session');
+      }
+    } else {
+      try {
+        const started = await interviewStart('Software Engineer', 'General', Voice.mode, 'intermediate');
+        Voice.interviewId = started.interview._id;
+        aiInterviewId = Voice.interviewId; // sync with text panel
+      } catch (err) {
+        showToast('Could not start interview: ' + err.message, 'error');
+      }
+    }
+  }
+
+  // AI speaks opening message
+  const openers = {
+    mixed:     "Hello! I'm Alex, your AI interviewer. We'll go through both behavioral and technical questions today. I'll speak each question aloud, and you can answer by voice or by typing. Let's begin. Tell me about yourself and your most impactful project so far.",
+    hr:        "Hi there! I'm Alex. Today we're focusing on behavioral questions using the STAR method. I'll ask you situational questions and I want you to walk me through your Situation, Task, Action, and Result. Ready? Let's start. Tell me about a time you demonstrated strong leadership.",
+    technical: "Hey! I'm Alex. We're diving into technical questions today — data structures, algorithms, and problem-solving. I'll read each problem aloud. You can write your solution in the code area and explain your approach verbally. Let's go. Given an array of integers, how would you find two numbers that add up to a target sum? This is the classic Two Sum problem.",
+  };
+
+  const opener = openers[Voice.mode] || openers.mixed;
+
+  // Show in speech box
+  const box = document.getElementById('vaiSpeechText');
+  if (box) box.textContent = opener;
+
+  aiSpeak(opener, () => {
+    // After AI speaks, automatically start listening
+    if (Voice.active) startListening();
+  });
+}
+
+/* ── Speech Recognition setup ── */
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showToast('Speech recognition not supported in this browser. Please use Chrome.', 'warning'); return; }
+
+  Voice.recognition = new SR();
+  Voice.recognition.continuous    = true;
+  Voice.recognition.interimResults = true;
+  Voice.recognition.lang          = 'en-US';
+  Voice.recognition.maxAlternatives = 1;
+
+  Voice.recognition.onstart = () => {
+    Voice.isListening = true;
+    setVaiState('listening');
+    setVStatus('Listening... speak your answer');
+    const micBtn = document.getElementById('vmicBtn');
+    if (micBtn) micBtn.classList.add('recording');
+    const micLbl = document.getElementById('vmicLabel');
+    if (micLbl) micLbl.textContent = 'Listening...';
+  };
+
+  Voice.recognition.onresult = (event) => {
+    let interim = '', final = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const t = event.results[i][0].transcript;
+      if (event.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    Voice.transcript += final;
+    const display = Voice.transcript + interim;
+    const tu = document.getElementById('vuserTranscript');
+    if (tu) tu.innerHTML = display || '<span class="vut-placeholder">Your answer will appear here as you speak...</span>';
+
+    // Auto-submit after 2.5s silence
+    clearTimeout(Voice.silenceTimer);
+    if (display.trim().split(' ').length >= 5) {
+      Voice.silenceTimer = setTimeout(() => {
+        if (Voice.active && Voice.isListening && Voice.transcript.trim()) {
+          stopListening();
+          submitVoiceAnswer(Voice.transcript.trim());
+        }
+      }, 2500);
+    }
+  };
+
+  Voice.recognition.onerror = (event) => {
+    if (event.error === 'no-speech') return;
+    console.warn('Speech recognition error:', event.error);
+    Voice.isListening = false;
+    setVaiState('idle');
+  };
+
+  Voice.recognition.onend = () => {
+    Voice.isListening = false;
+    const micBtn = document.getElementById('vmicBtn');
+    if (micBtn) micBtn.classList.remove('recording');
+    const micLbl = document.getElementById('vmicLabel');
+    if (micLbl) micLbl.textContent = 'Tap to Speak';
+    if (!Voice.isAISpeaking && Voice.active && !Voice.transcript.trim()) {
+      setVaiState('idle');
+      setVStatus('Tap mic or type to answer');
+    }
+  };
+}
+
+/* ── Toggle mic manually ── */
+window.toggleMic = function() {
+  if (!Voice.recognition) { showToast('Please start voice interview first.', 'info'); return; }
+  if (Voice.isAISpeaking) { showToast('Please wait for AI to finish speaking.', 'info'); return; }
+  if (Voice.isListening) {
+    stopListening();
+    if (Voice.transcript.trim()) submitVoiceAnswer(Voice.transcript.trim());
+  } else {
+    startListening();
+  }
+};
+
+function startListening() {
+  if (!Voice.recognition || Voice.isListening) return;
+  Voice.transcript = '';
+  const tu = document.getElementById('vuserTranscript');
+  if (tu) tu.innerHTML = '<span class="vut-placeholder">Listening...</span>';
+  try { Voice.recognition.start(); } catch (e) { /* already running */ }
+}
+
+function stopListening() {
+  if (Voice.recognition) try { Voice.recognition.stop(); } catch (e) {}
+  Voice.isListening = false;
+  clearTimeout(Voice.silenceTimer);
+  const micBtn = document.getElementById('vmicBtn');
+  if (micBtn) micBtn.classList.remove('recording');
+}
+
+/* ── Submit voice answer to AI ── */
+async function submitVoiceAnswer(text) {
+  if (!text || Voice.isAISpeaking) return;
+
+  setVStatus('AI is thinking...');
+  setVaiState('idle');
+  Voice.transcript = '';
+
+  // Show user answer in transcript area as sent
+  const tu = document.getElementById('vuserTranscript');
+  if (tu) tu.innerHTML = `<span style="color:var(--cyan);font-style:italic">"${text}"</span>`;
+
+  // Also add to text chat panel for continuity
+  addAIMsg(text, true);
+
+  try {
+    let data;
+    if (Voice.interviewId) {
+      data = await interviewMessage(Voice.interviewId, text);
+    } else {
+      // No session — use existing aiInterviewId or create one
+      if (!aiInterviewId) {
+        const started = await interviewStart('Software Engineer', 'General', Voice.mode, 'intermediate');
+        aiInterviewId = started.interview._id;
+        Voice.interviewId = aiInterviewId;
+      }
+      data = await interviewMessage(aiInterviewId, text);
+    }
+
+    // Update scores
+    if (data.feedback) {
+      updateVoiceScores(data.feedback);
+      updateFeedback(data.feedback); // also update text panel
+    }
+
+    // AI speaks the response
+    if (data.aiMessage) {
+      addAIMsg(data.aiMessage, false); // also in text panel
+      const box = document.getElementById('vaiSpeechText');
+      if (box) box.textContent = data.aiMessage;
+      setVStatus('Alex is speaking...');
+      aiSpeak(data.aiMessage, () => {
+        if (Voice.active) startListening(); // auto-listen after AI speaks
+      });
+    }
+  } catch (err) {
+    showToast('AI response failed: ' + err.message, 'error');
+    setVStatus('Error — tap mic to try again');
+    setVaiState('idle');
+  }
+}
+
+/* ── Type to send in voice modal ── */
+document.getElementById('vtypeSend')?.addEventListener('click', () => {
+  const input = document.getElementById('vtypeInput');
+  const text = input?.value.trim();
+  if (!text) return;
+  input.value = '';
+  submitVoiceAnswer(text);
+});
+document.getElementById('vtypeInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const text = e.target.value.trim();
+    if (!text) return;
+    e.target.value = '';
+    submitVoiceAnswer(text);
+  }
+});
+
+/* ── Update voice modal scores ── */
+function updateVoiceScores(feedback) {
+  const map = [
+    ['vConfVal', feedback.confidenceScore],
+    ['vCommVal', feedback.communicationScore],
+    ['vTechVal', feedback.technicalScore],
+  ];
+  const colors = { high: '#10b981', mid: '#6366f1', low: '#f59e0b' };
+  map.forEach(([id, score]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = score != null ? score + '%' : '—';
+    el.style.color = score >= 80 ? colors.high : score >= 60 ? colors.mid : colors.low;
+  });
+}
+
+/* ── Close voice modal ── */
+window.closeVoiceModal = function() {
+  Voice.active = false;
+  stopListening();
+  if (Voice.synth) Voice.synth.cancel();
+  clearTimeout(Voice.silenceTimer);
+  const modal = document.getElementById('voiceModal');
+  if (modal) modal.classList.remove('open');
+  setVaiState('idle');
+  Voice.interviewId = null;
+  Voice.transcript = '';
+  Voice.isAISpeaking = false;
+};

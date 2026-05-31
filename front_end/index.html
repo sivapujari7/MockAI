@@ -267,6 +267,9 @@
         <button class="ai-mode-btn" data-mode="technical" onclick="setAIMode('technical')">
           <span>💻</span> Technical
         </button>
+        <button class="ai-mode-btn voice-mode-btn" id="voiceInterviewBtn" onclick="startVoiceInterview()">
+          <span>🎙️</span> Voice Interview
+        </button>
       </div>
 
       <div class="ai-panel-body">
@@ -274,8 +277,8 @@
         <div class="ai-chat-side">
           <div class="ai-chat-header">
             <div class="ai-ava-wrap">
-              <div class="ai-ava">🤖</div>
-              <div class="ai-ava-ring"></div>
+              <div class="ai-ava" id="mainAiAva">🤖</div>
+              <div class="ai-ava-ring" id="mainAiRing"></div>
             </div>
             <div>
               <div class="ai-interviewer-name">Alex — AI Interviewer</div>
@@ -658,6 +661,99 @@
       <button class="btn-glow" type="submit" style="width:100%;justify-content:center">Create Account</button>
     </form>
     <div id="verificationBox" style="display:none"></div>
+  </div>
+</div>
+
+<!-- VOICE INTERVIEW MODAL -->
+<div class="voice-modal" id="voiceModal">
+  <div class="voice-modal-inner">
+
+    <!-- Mic Permission Screen -->
+    <div class="voice-screen" id="vScreenPermission">
+      <div class="vs-icon">🎙️</div>
+      <h2>Voice Interview</h2>
+      <p>MockAI needs access to your microphone so you can answer questions by speaking naturally — just like a real interview.</p>
+      <div class="vp-features">
+        <div class="vpf"><span>🤖</span> AI speaks each question aloud</div>
+        <div class="vpf"><span>🎤</span> You respond by voice or typing</div>
+        <div class="vpf"><span>⚡</span> Real-time feedback after each answer</div>
+      </div>
+      <button class="btn-glow" id="vGrantMicBtn" style="margin-top:8px">Allow Microphone & Start</button>
+      <button class="voice-cancel-btn" onclick="closeVoiceModal()">Cancel</button>
+    </div>
+
+    <!-- Active Interview Screen -->
+    <div class="voice-screen" id="vScreenInterview" style="display:none">
+      <button class="voice-close-btn" onclick="closeVoiceModal()">✕ End Interview</button>
+
+      <!-- AI Avatar -->
+      <div class="vai-wrap" id="vaiWrap">
+        <div class="vai-rings">
+          <div class="vai-ring r1" id="vRing1"></div>
+          <div class="vai-ring r2" id="vRing2"></div>
+          <div class="vai-ring r3" id="vRing3"></div>
+        </div>
+        <div class="vai-avatar" id="vaiAvatar">🤖</div>
+        <div class="vai-mouth" id="vaiMouth">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="vai-name">Alex — AI Interviewer</div>
+      <div class="vai-status" id="vaiStatus">Preparing your interview...</div>
+
+      <!-- AI Speech text display -->
+      <div class="vai-speech-box" id="vaiSpeechBox">
+        <div class="vai-speech-text" id="vaiSpeechText"></div>
+      </div>
+
+      <!-- User transcript -->
+      <div class="vuser-area">
+        <div class="vuser-transcript" id="vuserTranscript">
+          <span class="vut-placeholder">Your answer will appear here as you speak...</span>
+        </div>
+        <div class="vuser-controls">
+          <button class="vmic-btn" id="vmicBtn" onclick="toggleMic()">
+            <div class="vmic-icon" id="vmicIcon">🎤</div>
+            <div class="vmic-label" id="vmicLabel">Hold to Speak</div>
+            <div class="vmic-waves" id="vmicWaves">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </button>
+          <div class="vuser-or">or</div>
+          <div class="vtype-row">
+            <input type="text" class="vtype-input" id="vtypeInput" placeholder="Type your answer here...">
+            <button class="ai-send-btn" id="vtypeSend">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live scores bar at bottom -->
+      <div class="vscores-bar">
+        <div class="vscore-item">
+          <div class="vsi-label">Confidence</div>
+          <div class="vsi-val" id="vConfVal">—</div>
+        </div>
+        <div class="vscore-divider"></div>
+        <div class="vscore-item">
+          <div class="vsi-label">Communication</div>
+          <div class="vsi-val" id="vCommVal">—</div>
+        </div>
+        <div class="vscore-divider"></div>
+        <div class="vscore-item">
+          <div class="vsi-label">Technical</div>
+          <div class="vsi-val" id="vTechVal">—</div>
+        </div>
+        <div class="vscore-divider"></div>
+        <div class="vscore-item">
+          <div class="vsi-label">Mode</div>
+          <div class="vsi-val" id="vModeVal" style="color:#06b6d4">Full</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
