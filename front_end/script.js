@@ -920,59 +920,52 @@ if (document.readyState !== 'loading') {
 
 /* ════════════════════════════════════════════════════
 
-/* ═══════════════════════════════════════════════════════
-   VOICE INTERVIEW ENGINE v3 — ChatGPT Voice Mode Style
-   - Auto language detection (English + Telugu)
-   - No manual language buttons
-   - No mic button — fully hands-free
-   - Silence detection → auto submit
-   - Only final transcript shown (no interim flicker)
-   - Fast chunked TTS with female warm voice
-   - Auth-gated: must be signed in
-═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════
+   VOICE INTERVIEW ENGINE v4 — Production Grade
+   Fixes:
+   - TTS never gets stuck (no keepalive deadlock)
+   - Fresh recognition instance every session (no reuse bug)
+   - interim=true to prevent silent result drops
+   - Proper full cleanup on close so reopen always works
+   - No-speech handled without restart loop
+   - Smooth continuous flow: speak → listen → submit → speak
+═══════════════════════════════════════════════════════════ */
 
+/* ── State — single source of truth ── */
 const VE = {
-  /* session */
-  active:        false,
-  sessionId:     null,
-  mode:          'mixed',
-
-  /* speech */
-  synth:         window.speechSynthesis,
-  recognition:   null,
-  femaleVoiceEn: null,
-  femaleVoiceTE: null,
-
-  /* state */
-  phase:         'idle',   // idle | listening | processing | speaking
-  detectedLang:  'en-US',  // auto-detected, starts English
-  silenceMs:     1800,     // ms of silence before submitting
-  silenceTimer:  null,
-  finalText:     '',       // committed final transcript
-  restartAfterEnd: false,
-
-  /* noise filter */
-  minWords: 2,             // ignore single noise words
+  active:          false,
+  sessionId:       null,
+  mode:            'mixed',
+  synth:           window.speechSynthesis,
+  rec:             null,          // fresh SR per session
+  phase:           'idle',        // idle|speaking|listening|processing
+  detectedLang:    'en-US',
+  femaleVoiceEN:   null,
+  femaleVoiceTE:   null,
+  finalText:       '',
+  interimText:     '',
+  silenceTimer:    null,
+  silenceDelay:    1800,
+  isStarting:      false,         // guard against double-start
+  kaTimer:         null,          // TTS keepalive interval
 };
 
-/* ─── Pick best female voices once ─── */
+/* ── Pick female voices (called once + on voiceschanged) ── */
 function VE_pickVoices() {
-  if (!VE.synth) return;
-  const all = VE.synth.getVoices();
-
-  const enPref = [
-    'Samantha','Karen','Moira','Tessa','Fiona','Ava','Allison','Victoria',
-    'Google UK English Female','Microsoft Aria Online (Natural)',
-    'Microsoft Jenny Online (Natural)','Microsoft Aria','Microsoft Zira',
+  const all = VE.synth?.getVoices() || [];
+  const EN_PREF = [
+    'Samantha','Karen','Moira','Tessa','Fiona','Ava','Allison',
+    'Microsoft Aria Online (Natural)','Microsoft Jenny Online (Natural)',
+    'Google UK English Female','Microsoft Aria','Microsoft Zira',
   ];
-  VE.femaleVoiceEn = enPref.reduce((f,n)=>f||all.find(v=>v.name===n),null)
-    || all.find(v=>v.lang.startsWith('en')&&/female|woman/i.test(v.name))
+  VE.femaleVoiceEN = EN_PREF.reduce((f,n)=>f||all.find(v=>v.name===n),null)
+    || all.find(v=>v.lang.startsWith('en-')&&/female|woman/i.test(v.name))
     || all.find(v=>v.lang==='en-GB')
     || all.find(v=>v.lang.startsWith('en'))
     || null;
 
-  const tePref = ['Google తెలుగు','Google Telugu','Lekha'];
-  VE.femaleVoiceTE = tePref.reduce((f,n)=>f||all.find(v=>v.name===n),null)
+  const TE_PREF = ['Google తెలుగు','Google Telugu','Lekha','Neerja'];
+  VE.femaleVoiceTE = TE_PREF.reduce((f,n)=>f||all.find(v=>v.name===n),null)
     || all.find(v=>v.lang==='te-IN'||v.lang==='te')
     || null;
 }
@@ -981,241 +974,308 @@ if (VE.synth) {
   VE.synth.onvoiceschanged = VE_pickVoices;
 }
 
-/* ─── Detect language from text ─── */
-function VE_detectLang(text) {
-  // Telugu unicode range: \u0C00-\u0C7F
-  const teluguChars = (text.match(/[\u0C00-\u0C7F]/g) || []).length;
-  const totalChars  = text.replace(/\s/g,'').length;
-
-  // Telugu keyword triggers
-  const teluguWords = /\b(nenu|meeru|mee|idi|adi|cheppandi|cheppу|telugu|lo cheppandi|ante|kaadu|avunu|chettu|neeku|maku)\b/i;
-
-  if (teluguChars > 2 || (totalChars > 0 && teluguChars/totalChars > 0.15) || teluguWords.test(text)) {
-    return 'te-IN';
-  }
-  // Detect explicit switch request
-  if (/telugu|in telugu|switch to telugu|telugulo|thelugu/i.test(text)) return 'te-IN';
-  if (/in english|switch to english|english lo|back to english/i.test(text)) return 'en-US';
-  return null; // no change
-}
-
-/* ─── SET PHASE ─── */
-function VE_setPhase(phase) {
-  VE.phase = phase;
-  const statusEl = document.getElementById('vaiStatus');
-  const wrapEl   = document.getElementById('vaiWrap');
-  const box      = document.getElementById('vaiSpeechBox');
-
-  // Remove all states
-  wrapEl?.classList.remove('speaking','listening','thinking');
-  box?.classList.remove('ai-box','user-box');
-
-  const labels = {
-    listening:  '● Listening...',
-    processing: '⟳ Processing...',
-    speaking:   '▶ Priya is speaking...',
-    idle:       '',
-  };
-  if (statusEl) statusEl.textContent = labels[phase] || '';
-
-  if (phase === 'speaking')   { wrapEl?.classList.add('speaking');  box?.classList.add('ai-box'); }
-  if (phase === 'listening')  { wrapEl?.classList.add('listening'); box?.classList.add('user-box'); }
-  if (phase === 'processing') { wrapEl?.classList.add('thinking'); }
-}
-
-/* ─── TYPEWRITER for speech box ─── */
-function VE_typewrite(el, text, onDone) {
-  if (!el) { onDone?.(); return; }
-  el.textContent = '';
-  const clean = text.replace(/\*\*(.*?)\*\*/g,'$1').replace(/[*_`#]/g,'');
-  let i = 0;
-  const speed = Math.max(14, Math.min(28, 2200 / Math.max(clean.length,1)));
-  const t = setInterval(()=>{
-    el.textContent += clean[i++];
-    if (i >= clean.length) { clearInterval(t); onDone?.(); }
-  }, speed);
-}
-
-/* ─── SPEAK ─── */
+/* ════════════════════
+   TTS — AI SPEAKS
+   No keepalive loop — use single utterance per chunk with
+   a watchdog timer that pokes synth if it stalls.
+════════════════════ */
 function VE_speak(rawText, onDone) {
-  if (!VE.synth || !rawText?.trim()) { onDone?.(); return; }
-  VE.synth.cancel();
+  if (!rawText?.trim()) { onDone?.(); return; }
 
-  const clean = rawText
+  // Full stop any previous speech
+  VE_synthStop();
+
+  const text = rawText
     .replace(/\*\*(.*?)\*\*/g,'$1')
     .replace(/[*_`#\[\]]/g,'')
     .replace(/\n+/g,' ')
     .trim();
 
   VE_setPhase('speaking');
-  const box = document.getElementById('vaiSpeechText');
-  VE_typewrite(box, rawText, null);
+  VE_showSpeechBox(rawText);
 
-  // Smart sentence split for smooth TTS
-  const chunks = VE_split(clean);
-  VE_speakChunks(chunks, 0, onDone);
+  const chunks = VE_splitText(text);
+  let idx = 0;
+  let watchdog = null;
+
+  function speakNext() {
+    clearInterval(watchdog);
+    if (!VE.active || idx >= chunks.length) {
+      VE_synthStop();
+      onDone?.();
+      return;
+    }
+
+    const utt    = new SpeechSynthesisUtterance(chunks[idx]);
+    const isTE   = VE.detectedLang === 'te-IN';
+    utt.voice    = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEN) : VE.femaleVoiceEN;
+    utt.lang     = isTE ? 'te-IN' : 'en-US';
+    utt.rate     = 0.9;
+    utt.pitch    = 1.15;
+    utt.volume   = 1.0;
+
+    utt.onstart  = () => {
+      // Watchdog: if synth freezes (Chrome bug), poke it after 12s
+      clearInterval(watchdog);
+      watchdog = setInterval(() => {
+        if (VE.synth.speaking && !VE.synth.paused) {
+          VE.synth.pause();
+          setTimeout(() => VE.synth.resume(), 50);
+        }
+      }, 12000);
+    };
+
+    utt.onend = () => {
+      clearInterval(watchdog);
+      idx++;
+      // Small gap between sentences — more natural
+      setTimeout(speakNext, 60);
+    };
+
+    utt.onerror = (e) => {
+      clearInterval(watchdog);
+      if (e.error === 'interrupted' || e.error === 'canceled') {
+        // We cancelled intentionally — don't continue
+        return;
+      }
+      // For other errors skip chunk and continue
+      idx++;
+      setTimeout(speakNext, 100);
+    };
+
+    VE.synth.speak(utt);
+  }
+
+  speakNext();
 }
 
-function VE_split(text) {
-  const sents = text.match(/[^.!?;]+[.!?;]*/g) || [text];
-  const out=[]; let buf='';
-  sents.forEach(s=>{
-    if ((buf+s).length>110 && buf){ out.push(buf.trim()); buf=s; }
-    else buf+=s;
+function VE_synthStop() {
+  clearInterval(VE.kaTimer);
+  VE.kaTimer = null;
+  try { VE.synth?.cancel(); } catch(e) {}
+}
+
+function VE_splitText(text) {
+  // Split at sentence endings, keep chunks ≤ 100 chars for smooth TTS
+  const raw = text.match(/[^.!?]+[.!?]*/g) || [text];
+  const out = []; let buf = '';
+  raw.forEach(s => {
+    if ((buf + s).length > 100 && buf) { out.push(buf.trim()); buf = s; }
+    else buf += s;
   });
   if (buf.trim()) out.push(buf.trim());
   return out.filter(Boolean);
 }
 
-function VE_speakChunks(chunks, idx, onDone) {
-  if (!VE.active || idx >= chunks.length) {
-    VE.synth?.cancel();
-    onDone?.();
-    return;
-  }
-  const utt    = new SpeechSynthesisUtterance(chunks[idx]);
-  const isTE   = VE.detectedLang === 'te-IN';
-  utt.voice    = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEn) : VE.femaleVoiceEn;
-  utt.lang     = isTE ? 'te-IN' : 'en-US';
-  utt.rate     = 0.88;
-  utt.pitch    = 1.2;   // warm, feminine
-  utt.volume   = 1;
-  utt.onend    = ()=> VE_speakChunks(chunks, idx+1, onDone);
-  utt.onerror  = ()=> VE_speakChunks(chunks, idx+1, onDone);
-  VE.synth.speak(utt);
-  // Chrome keepalive
-  if (idx === 0) {
-    const ka = setInterval(()=>{
-      if (VE.phase !== 'speaking'){ clearInterval(ka); return; }
-      VE.synth.pause(); VE.synth.resume();
-    }, 9000);
-  }
-}
-
-/* ─── SPEECH RECOGNITION ─── */
-function VE_initRecognition() {
+/* ════════════════════
+   SPEECH RECOGNITION
+   Fresh instance every session.
+   interim=true so Chrome doesn't silently drop finals.
+════════════════════ */
+function VE_createRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    showToast('Voice interview needs Chrome or Edge browser.','warning');
-    return false;
+  if (!SR) return null;
+
+  // Always destroy old instance first
+  if (VE.rec) {
+    try { VE.rec.abort(); } catch(e) {}
+    VE.rec.onresult = null;
+    VE.rec.onerror  = null;
+    VE.rec.onend    = null;
+    VE.rec = null;
   }
-  VE.recognition               = new SR();
-  VE.recognition.continuous    = true;
-  VE.recognition.interimResults = false;  // ONLY final results — no flicker
-  VE.recognition.maxAlternatives = 3;     // pick best of 3 alternatives
-  VE.recognition.lang          = 'en-US'; // starts English, auto-switches
 
-  VE.recognition.onresult = (e) => {
-    let best = '';
-    // Pick highest-confidence alternative
-    const result = e.results[e.resultIndex];
-    if (!result?.isFinal) return;
-    let maxConf = -1;
-    for (let i=0; i<result.length; i++) {
-      if (result[i].confidence > maxConf) {
-        maxConf = result[i].confidence;
-        best = result[i].transcript;
+  const rec = new SR();
+  rec.continuous      = false;   // single utterance mode — more reliable
+  rec.interimResults  = true;    // must be true or Chrome drops some finals
+  rec.maxAlternatives = 1;
+  rec.lang            = VE.detectedLang;
+
+  rec.onresult = (e) => {
+    VE.interimText = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        VE.finalText += (VE.finalText ? ' ' : '') + t.trim();
+      } else {
+        VE.interimText = t;
       }
     }
-    best = best.trim();
-    if (!best) return;
+    // Show only final text in transcript box — no interim
+    VE_showTranscript(VE.finalText || VE.interimText);
 
-    VE.finalText += (VE.finalText ? ' ' : '') + best;
-
-    // Show final only in transcript box
-    const tu = document.getElementById('vuserTranscript');
-    if (tu) tu.textContent = VE.finalText;
-
-    // Detect language change
-    const detected = VE_detectLang(VE.finalText);
-    if (detected && detected !== VE.detectedLang) {
-      VE.detectedLang = detected;
-      VE_updateLangIndicator();
-      // Update recognition language live
-      try { VE.recognition.lang = detected; } catch(e2){}
-    }
-
-    // Silence timer — reset on each final chunk
-    clearTimeout(VE.silenceTimer);
-    const words = VE.finalText.trim().split(/\s+/).length;
-    // Adaptive silence: short answers wait longer
-    const delay = words < 5 ? 2200 : words < 15 ? 1800 : 1400;
-    VE.silenceTimer = setTimeout(()=>{
-      if (VE.phase === 'listening' && VE.finalText.trim().length > 0) {
-        VE_submitAnswer(VE.finalText.trim());
+    // Detect language change from what user said
+    if (VE.finalText) {
+      const lang = VE_detectLang(VE.finalText);
+      if (lang && lang !== VE.detectedLang) {
+        VE.detectedLang = lang;
+        VE_updateLangBadge();
       }
-    }, delay);
+    }
   };
 
-  VE.recognition.onerror = (e) => {
+  rec.onerror = (e) => {
+    if (e.error === 'aborted') return; // we caused this
     if (e.error === 'no-speech') {
-      // No speech detected — restart quietly
-      if (VE.phase === 'listening') VE_startListening();
+      // Restart quietly only if still in listen phase
+      if (VE.phase === 'listening' && VE.active) {
+        setTimeout(() => VE_doListen(), 300);
+      }
       return;
     }
-    if (e.error === 'aborted') return;
-    console.warn('SR error:', e.error);
-    // Reconnect on network/audio errors
-    if (['network','audio-capture','service-not-allowed'].includes(e.error)) {
-      setTimeout(()=>{ if(VE.phase==='listening') VE_startListening(); }, 1000);
+    console.warn('[VoiceEngine] SR error:', e.error);
+    if (VE.phase === 'listening' && VE.active) {
+      VE_setStatus('Reconnecting...');
+      setTimeout(() => VE_doListen(), 800);
     }
   };
 
-  VE.recognition.onend = () => {
-    // Auto-restart unless we intentionally stopped
+  rec.onend = () => {
+    // If we have accumulated text, submit it
+    if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
+      clearTimeout(VE.silenceTimer);
+      VE_submitAnswer(VE.finalText.trim());
+      return;
+    }
+    // No text yet — restart listening
     if (VE.phase === 'listening' && VE.active) {
-      setTimeout(()=>{
-        if (VE.phase==='listening' && VE.active) {
-          try { VE.recognition.start(); } catch(e2){}
-        }
-      }, 200);
+      setTimeout(() => VE_doListen(), 200);
     }
   };
-  return true;
+
+  return rec;
 }
 
-function VE_startListening() {
-  if (!VE.recognition || !VE.active) return;
-  VE.finalText = '';
+function VE_doListen() {
+  if (!VE.active || VE.isStarting) return;
+  if (VE.phase === 'speaking') return; // don't interrupt AI
+
+  VE.isStarting = true;
+  VE.finalText  = '';
+  VE.interimText = '';
+  clearTimeout(VE.silenceTimer);
+
+  // Fresh recognition every time — avoids Chrome's stale SR bug
+  VE.rec = VE_createRecognition();
+  if (!VE.rec) {
+    showToast('Speech recognition needs Chrome or Edge.', 'warning');
+    VE.isStarting = false;
+    return;
+  }
+
   VE_setPhase('listening');
-  const tu = document.getElementById('vuserTranscript');
-  if (tu) tu.textContent = '';
-  VE.recognition.lang = VE.detectedLang;
-  try { VE.recognition.start(); } catch(e){}
+  VE_showTranscript('');
+
+  try {
+    VE.rec.lang = VE.detectedLang;
+    VE.rec.start();
+  } catch(e) {
+    console.warn('[VoiceEngine] start error:', e.message);
+  } finally {
+    VE.isStarting = false;
+  }
+
+  // Adaptive silence timer — fires if user pauses mid-sentence
+  // Combined with onend which fires when Chrome auto-ends single-utterance
+  VE.silenceTimer = setTimeout(() => {
+    if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
+      try { VE.rec?.stop(); } catch(e) {}
+    }
+  }, 7000); // max listen window — prevents forever-open mic
 }
 
 function VE_stopListening() {
   clearTimeout(VE.silenceTimer);
-  try { VE.recognition?.stop(); } catch(e){}
+  VE.isStarting = false;
+  try { VE.rec?.stop(); } catch(e) {}
+  try { VE.rec?.abort(); } catch(e) {}
 }
 
-function VE_updateLangIndicator() {
-  const el = document.getElementById('vLangIndicator');
-  if (!el) return;
+/* ════════════════════
+   LANGUAGE DETECTION
+════════════════════ */
+function VE_detectLang(text) {
+  const teChar = (text.match(/[\u0C00-\u0C7F]/g)||[]).length;
+  if (teChar > 1) return 'te-IN';
+  if (/\b(nenu|meeru|idi|adi|cheppandi|telugu|lo\s+cheppandi|ante|avunu|kaadu|neeku|maku|okka|rendu|mana|undi|ledu)\b/i.test(text)) return 'te-IN';
+  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|తెలుగు/i.test(text)) return 'te-IN';
+  if (/switch.*english|in english|english.*lo|back.*english/i.test(text)) return 'en-US';
+  return null;
+}
+
+function VE_updateLangBadge() {
+  const el  = document.getElementById('vLangIndicator');
   const isTE = VE.detectedLang === 'te-IN';
-  el.textContent  = isTE ? '🇮🇳 తెలుగు' : '🇬🇧 English';
-  el.style.color  = isTE ? '#f59e0b' : '#06b6d4';
+  if (el) { el.textContent = isTE ? '🇮🇳 తెలుగు' : '🇬🇧 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
 }
 
-/* ─── SUBMIT ANSWER TO BACKEND ─── */
+/* ════════════════════
+   PHASE & UI
+════════════════════ */
+function VE_setPhase(phase) {
+  VE.phase = phase;
+  const wrap = document.getElementById('vaiWrap');
+  wrap?.classList.remove('speaking','listening','thinking');
+  if (phase !== 'idle') wrap?.classList.add(
+    phase === 'processing' ? 'thinking' : phase
+  );
+  const mainAva  = document.getElementById('mainAiAva');
+  const mainRing = document.getElementById('mainAiRing');
+  mainAva?.classList.toggle('speaking',  phase === 'speaking');
+  mainRing?.classList.toggle('speaking', phase === 'speaking');
+}
+
+function VE_setStatus(msg) {
+  const el = document.getElementById('vaiStatus');
+  if (el) el.textContent = msg;
+}
+
+function VE_showSpeechBox(text) {
+  const el = document.getElementById('vaiSpeechText');
+  if (!el) return;
+  const clean = text.replace(/\*\*(.*?)\*\*/g,'$1').replace(/[*_`#]/g,'');
+  // Fast typewriter
+  el.textContent = '';
+  let i = 0;
+  const speed = Math.max(12, Math.min(25, 1800 / Math.max(clean.length, 1)));
+  const t = setInterval(() => {
+    el.textContent += clean[i++];
+    if (i >= clean.length) clearInterval(t);
+  }, speed);
+}
+
+function VE_showTranscript(text) {
+  const el = document.getElementById('vuserTranscript');
+  if (el) el.textContent = text;
+}
+
+/* Status labels per phase */
+const VE_STATUS = {
+  speaking:   '▶ Priya is speaking...',
+  listening:  '🎤 Listening — speak now',
+  processing: '⟳ Processing your answer...',
+  idle:       'Ready',
+};
+
+/* ════════════════════
+   SUBMIT ANSWER
+════════════════════ */
 async function VE_submitAnswer(text) {
-  if (!text || VE.phase !== 'listening') return;
-  VE_stopListening();
+  if (!text?.trim() || VE.phase === 'processing') return;
 
-  // Noise filter — ignore very short or non-linguistic noise
+  // Noise filter — ignore isolated noise words
   const words = text.trim().split(/\s+/).length;
-  if (words < VE.minWords && !/[.!?]/.test(text)) {
-    // Too short — restart listening
-    VE_startListening();
-    return;
-  }
+  if (words < 2) { VE_doListen(); return; }
 
+  VE_stopListening();
   VE_setPhase('processing');
+  VE_setStatus(VE_STATUS.processing);
+  VE_showTranscript('"' + text + '"');
+
   addAIMsg(text, true); // mirror in text panel
 
-  // Show processing in speech box
   const box = document.getElementById('vaiSpeechText');
-  if (box) box.innerHTML = '<span style="color:var(--dim);font-style:italic">Processing your answer...</span>';
+  if (box) box.innerHTML = '<span style="opacity:.5;font-style:italic">Thinking...</span>';
 
   try {
     const data = await interviewMessage(VE.sessionId, text);
@@ -1227,130 +1287,179 @@ async function VE_submitAnswer(text) {
 
     if (data.aiMessage) {
       addAIMsg(data.aiMessage, false);
-      // Detect if AI reply is in Telugu
-      const aiLang = VE_detectLang(data.aiMessage);
-      if (aiLang) VE.detectedLang = aiLang;
 
-      VE_speak(data.aiMessage, ()=>{
+      // Detect AI response language and adapt
+      const aiLang = VE_detectLang(data.aiMessage);
+      if (aiLang && aiLang !== VE.detectedLang) {
+        VE.detectedLang = aiLang;
+        VE_updateLangBadge();
+      }
+
+      VE_setStatus(VE_STATUS.speaking);
+      VE_speak(data.aiMessage, () => {
         if (VE.active) {
-          VE.finalText = '';
-          VE_startListening();
+          VE_setStatus(VE_STATUS.listening);
+          VE_doListen();
         }
       });
     }
   } catch(err) {
-    showToast(err.message || 'AI response failed — trying again.','error');
+    console.error('[VoiceEngine] Submit error:', err.message);
+    showToast('AI error — listening again.', 'error');
     VE_setPhase('idle');
-    if (box) box.textContent = 'Something went wrong. Listening again...';
-    setTimeout(()=>{ if(VE.active) VE_startListening(); }, 2000);
+    VE_setStatus('Error — trying again...');
+    if (box) box.textContent = '';
+    setTimeout(() => { if (VE.active) VE_doListen(); }, 2000);
   }
 }
 
-/* ─── SCORES ─── */
+/* ════════════════════
+   SCORES
+════════════════════ */
 function VE_updateScores(fb) {
-  [['vConfVal',fb.confidenceScore],['vCommVal',fb.communicationScore],['vTechVal',fb.technicalScore]]
-    .forEach(([id,s])=>{
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.textContent = s!=null ? s+'%' : '—';
-      el.style.color = s>=80?'#10b981':s>=60?'#6366f1':'#f59e0b';
-    });
+  [['vConfVal', fb.confidenceScore],
+   ['vCommVal', fb.communicationScore],
+   ['vTechVal', fb.technicalScore]].forEach(([id, s]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = s != null ? s + '%' : '—';
+    el.style.color = s >= 80 ? '#10b981' : s >= 60 ? '#6366f1' : '#f59e0b';
+  });
 }
 
-/* ─── OPEN VOICE MODAL ─── */
+/* ════════════════════
+   OPEN MODAL
+════════════════════ */
 window.startVoiceInterview = function() {
   if (!isLoggedIn?.()) {
     openAuthModal('login');
-    showToast('Sign in to use Voice Interview.','info');
+    showToast('Sign in to use Voice Interview.', 'info');
     return;
   }
   VE.mode = aiMode;
   VE.detectedLang = 'en-US';
+  VE_updateLangBadge();
   document.getElementById('voiceModal')?.classList.add('open');
   document.body.style.overflow = 'hidden';
+  document.getElementById('vScreenPermission').style.display = 'flex';
+  document.getElementById('vScreenInterview').style.display  = 'none';
 };
 
-/* ─── GRANT MIC ─── */
-document.getElementById('vGrantMicBtn')?.addEventListener('click', async ()=>{
+/* ════════════════════
+   GRANT MIC & START
+════════════════════ */
+document.getElementById('vGrantMicBtn')?.addEventListener('click', async () => {
   const btn = document.getElementById('vGrantMicBtn');
   setLoading(btn, true);
   try {
-    await navigator.mediaDevices.getUserMedia({ audio:true });
-    const ok = VE_initRecognition();
-    if (!ok) { setLoading(btn,false); return; }
+    await navigator.mediaDevices.getUserMedia({ audio: true });
     // Show interview screen
     document.getElementById('vScreenPermission').style.display = 'none';
     document.getElementById('vScreenInterview').style.display  = 'flex';
     VE.active = true;
-    VE_updateLangIndicator();
     await VE_beginSession();
   } catch(err) {
     setLoading(btn, false);
-    showToast('Microphone access denied. Please allow mic access in your browser settings.','error');
+    showToast('Microphone denied. Enable it in browser settings.', 'error');
   }
 });
 
-/* ─── BEGIN SESSION ─── */
+/* ════════════════════
+   BEGIN SESSION
+════════════════════ */
 async function VE_beginSession() {
   VE_setPhase('processing');
+  VE_setStatus('Connecting to Priya...');
+
   const box = document.getElementById('vaiSpeechText');
-  if (box) box.textContent = 'Connecting to Priya...';
+  if (box) box.textContent = '';
+  VE_showTranscript('');
 
   try {
-    const started = await interviewStart('Software Engineer','General',VE.mode,'intermediate');
-    VE.sessionId   = started.interview._id;
-    aiInterviewId  = VE.sessionId;
+    const started = await interviewStart('Software Engineer', 'General', VE.mode, 'intermediate');
+    VE.sessionId  = started.interview._id;
+    aiInterviewId = VE.sessionId;
 
-    // Opening message from AI
-    const firstMsg = started.interview?.messages?.find(m=>m.role==='ai');
-    if (firstMsg?.content) {
-      addAIMsg(firstMsg.content, false);
-      VE_speak(firstMsg.content, ()=>{
-        if (VE.active) VE_startListening();
-      });
-    } else {
-      // Fallback opener
-      const openers = {
-        mixed:     "Hello! I'm Priya, your interview coach. I'm here to help you feel confident and prepared. Let's start — could you tell me a little about yourself and the role you're applying for?",
-        hr:        "Hi! I'm Priya. Today we'll practice behavioral questions. I'll guide you through each one using the STAR method. Let's begin — tell me about a time you showed strong leadership.",
-        technical: "Hi! I'm Priya. We're doing technical questions today. I'll read each problem clearly — take a moment to think before answering. First question: Given an array of integers, how would you find two numbers that add up to a target?",
-      };
-      const opener = openers[VE.mode] || openers.mixed;
-      addAIMsg(opener, false);
-      VE_speak(opener, ()=>{ if(VE.active) VE_startListening(); });
-    }
+    const firstAIMsg = started.interview?.messages?.find(m => m.role === 'ai');
+    const opener = firstAIMsg?.content || VE_getOpener();
+
+    addAIMsg(opener, false);
+    VE_setStatus(VE_STATUS.speaking);
+    VE_speak(opener, () => {
+      if (VE.active) {
+        VE_setStatus(VE_STATUS.listening);
+        VE_doListen();
+      }
+    });
   } catch(err) {
-    showToast('Could not start interview: '+err.message,'error');
+    showToast('Could not start interview: ' + err.message, 'error');
     VE_setPhase('idle');
-    if (box) box.textContent = 'Could not connect. Please try again.';
+    VE_setStatus('Connection failed. Please try again.');
+    if (box) box.textContent = 'Could not connect. Please close and try again.';
   }
 }
 
-/* ─── TYPE TO ANSWER (fallback) ─── */
+function VE_getOpener() {
+  const openers = {
+    mixed:     "Hi! I'm Priya, your interview coach. I'm excited to help you prepare. We'll go through a mix of behavioral and technical questions. Just speak naturally — I'm listening. Let's start: Could you tell me a bit about yourself and what role you're preparing for?",
+    hr:        "Hi! I'm Priya. Today we'll practice behavioral questions using the STAR method. Take your time with each answer — I'm here to help you improve. Let's begin: Tell me about a time you showed strong leadership under pressure.",
+    technical: "Hi! I'm Priya. We're focusing on technical questions today — data structures, algorithms, and problem-solving. Think out loud if it helps. First question: Given an array of integers, how would you find two numbers that add up to a target sum?",
+  };
+  return openers[VE.mode] || openers.mixed;
+}
+
+/* ════════════════════
+   TYPE FALLBACK
+════════════════════ */
 function VE_typeSubmit() {
   const inp = document.getElementById('vtypeInput');
   const txt = inp?.value.trim();
-  if (!txt) return;
+  if (!txt || !VE.active) return;
   inp.value = '';
   VE_stopListening();
   VE.finalText = txt;
   VE_submitAnswer(txt);
 }
 document.getElementById('vtypeSend')?.addEventListener('click', VE_typeSubmit);
-document.getElementById('vtypeInput')?.addEventListener('keydown', e=>{
-  if (e.key==='Enter'){ e.preventDefault(); VE_typeSubmit(); }
+document.getElementById('vtypeInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); VE_typeSubmit(); }
 });
 
-/* ─── CLOSE ─── */
+/* ════════════════════
+   CLOSE — FULL CLEANUP
+   Ensures reopening always works fresh
+════════════════════ */
 window.closeVoiceModal = function() {
-  VE.active = false;
-  VE_stopListening();
-  VE.synth?.cancel();
+  // 1. Kill all audio immediately
+  VE_synthStop();
+
+  // 2. Kill recognition — destroy instance so it can't fire callbacks
   clearTimeout(VE.silenceTimer);
+  VE.isStarting = false;
+  if (VE.rec) {
+    VE.rec.onresult = null;
+    VE.rec.onerror  = null;
+    VE.rec.onend    = null;
+    try { VE.rec.abort(); } catch(e) {}
+    VE.rec = null;
+  }
+
+  // 3. Reset all state
+  VE.active        = false;
+  VE.sessionId     = null;
+  VE.finalText     = '';
+  VE.interimText   = '';
+  VE.detectedLang  = 'en-US';
+  VE.phase         = 'idle';
+
+  // 4. Reset UI
+  VE_setPhase('idle');
+  const box = document.getElementById('vaiSpeechText');
+  if (box) box.textContent = '';
+  VE_showTranscript('');
+  VE_setStatus('');
+
+  // 5. Close modal
   document.getElementById('voiceModal')?.classList.remove('open');
   document.body.style.overflow = '';
-  VE_setPhase('idle');
-  VE.sessionId    = null;
-  VE.finalText    = '';
-  VE.detectedLang = 'en-US';
 };
