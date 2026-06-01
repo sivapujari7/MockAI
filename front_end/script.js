@@ -1160,6 +1160,7 @@ var VE = {
   finalText:    '',
   interimText:  '',
   lastHeardText: '',
+  mobileSubmitTimer: null,
   listenRunId:  0,
   detectedLang: 'en-US',
   userLanguage: 'english',
@@ -1492,20 +1493,75 @@ function VE_destroyRec() {
   VE.rec.onerror  = null;
   VE.rec.onend    = null;
   VE.rec.onstart  = null;
+  VE.rec.onspeechend = null;
+  VE.rec.onsoundend  = null;
   try { VE.rec.abort(); } catch(e) {}
   VE.rec = null;
 }
 
-function VE_getHeardText() {
-  var finalText = (VE.finalText || '').trim();
-  var interimText = (VE.interimText || '').trim();
-  var lastHeardText = (VE.lastHeardText || '').trim();
+function VE_cleanHeardText(text) {
+  return (text || '').replace(/\s+/g, ' ').trim();
+}
 
-  if (finalText && interimText && interimText.toLowerCase().indexOf(finalText.toLowerCase()) !== 0) {
-    return (finalText + ' ' + interimText).trim();
+function VE_rememberHeardText(text) {
+  text = VE_cleanHeardText(text);
+  if (!text) return VE_cleanHeardText(VE.lastHeardText);
+
+  var prev = VE_cleanHeardText(VE.lastHeardText);
+  var prevLower = prev.toLowerCase();
+  var textLower = text.toLowerCase();
+
+  if (!prev || textLower.indexOf(prevLower) !== -1) {
+    VE.lastHeardText = text;
+  } else if (prevLower.indexOf(textLower) === -1) {
+    VE.lastHeardText = VE_cleanHeardText(prev + ' ' + text);
   }
 
-  return finalText || interimText || lastHeardText;
+  return VE_cleanHeardText(VE.lastHeardText);
+}
+
+function VE_getHeardText() {
+  var finalText = VE_cleanHeardText(VE.finalText);
+  var interimText = VE_cleanHeardText(VE.interimText);
+  var heard = '';
+
+  if (finalText && interimText && interimText.toLowerCase().indexOf(finalText.toLowerCase()) !== 0) {
+    heard = VE_cleanHeardText(finalText + ' ' + interimText);
+  } else {
+    heard = finalText || interimText;
+  }
+
+  return heard || VE_cleanHeardText(VE.lastHeardText);
+}
+
+function VE_clearListenTimers() {
+  clearTimeout(VE.silenceTimer);
+  clearTimeout(VE.mobileSubmitTimer);
+  VE.silenceTimer = null;
+  VE.mobileSubmitTimer = null;
+}
+
+function VE_releaseBargeMic() {
+  try { if (VE.audioCtx) VE.audioCtx.close(); } catch(e) {}
+  if (VE.micStream) {
+    try { VE.micStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
+  }
+  VE.audioCtx = null;
+  VE.analyser = null;
+  VE.micStream = null;
+  VE.vadRunning = false;
+  VE.loudFrames = 0;
+}
+
+function VE_scheduleSubmitFromSpeech(listenRunId, delay) {
+  clearTimeout(VE.mobileSubmitTimer);
+  VE.mobileSubmitTimer = setTimeout(function() {
+    var bestText = VE_getHeardText();
+    if (listenRunId === VE.listenRunId && VE.phase === 'listening' && bestText && VE.active) {
+      VE_clearListenTimers();
+      VE_submitAnswer(bestText);
+    }
+  }, delay);
 }
 
 function VE_restartListen(delay) {
@@ -1522,7 +1578,7 @@ function VE_createRecognition() {
 
   var listenRunId = VE.listenRunId;
   var rec = new SR();
-  rec.continuous      = false;
+  rec.continuous      = VE.isMobile ? true : false;
   rec.interimResults  = true;  // prevents Chrome silently dropping finals
   rec.maxAlternatives = 1;
   rec.lang            = VE.detectedLang;
@@ -1548,8 +1604,7 @@ function VE_createRecognition() {
     VE.finalText = finalParts.join(' ').trim();
     VE.interimText = interimParts.join(' ').trim();
 
-    var heard = VE_getHeardText();
-    if (heard) VE.lastHeardText = heard;
+    var heard = VE_rememberHeardText(VE_getHeardText());
     VE_showTranscript(heard);
 
     if (heard) {
@@ -1561,14 +1616,31 @@ function VE_createRecognition() {
       }
     }
 
-    clearTimeout(VE.silenceTimer);
+    VE_clearListenTimers();
     if (heard) {
       VE.silenceTimer = setTimeout(function() {
         var bestText = VE_getHeardText();
         if (listenRunId === VE.listenRunId && VE.phase === 'listening' && bestText && VE.active) {
+          VE_clearListenTimers();
           VE_submitAnswer(bestText);
         }
-      }, VE.isMobile ? Math.max(1300, VE.silenceDelay) : VE.silenceDelay);
+      }, VE.isMobile ? 1200 : VE.silenceDelay);
+
+      if (VE.isMobile) VE_scheduleSubmitFromSpeech(listenRunId, 900);
+    }
+  };
+
+  rec.onspeechend = function() {
+    if (listenRunId !== VE.listenRunId || !VE.isMobile) return;
+    if (VE.phase === 'listening' && VE_getHeardText() && VE.active) {
+      VE_scheduleSubmitFromSpeech(listenRunId, 250);
+    }
+  };
+
+  rec.onsoundend = function() {
+    if (listenRunId !== VE.listenRunId || !VE.isMobile) return;
+    if (VE.phase === 'listening' && VE_getHeardText() && VE.active) {
+      VE_scheduleSubmitFromSpeech(listenRunId, 350);
     }
   };
 
@@ -1579,7 +1651,7 @@ function VE_createRecognition() {
     if (e.error === 'no-speech') {
       var noSpeechText = VE_getHeardText();
       if (noSpeechText) {
-        clearTimeout(VE.silenceTimer);
+        VE_clearListenTimers();
         VE_submitAnswer(noSpeechText);
       } else {
         VE_restartListen(VE.isMobile ? 650 : 250);
@@ -1598,7 +1670,7 @@ function VE_createRecognition() {
     VE.isStarting = false;
     var heard = VE_getHeardText();
     if (VE.phase === 'listening' && heard && VE.active) {
-      clearTimeout(VE.silenceTimer);
+      VE_clearListenTimers();
       VE_submitAnswer(heard);
       return;
     }
@@ -1617,7 +1689,8 @@ function VE_doListen() {
   VE.finalText   = '';
   VE.interimText = '';
   VE.lastHeardText = '';
-  clearTimeout(VE.silenceTimer);
+  VE_clearListenTimers();
+  if (VE.isMobile) VE_releaseBargeMic();
 
   VE.rec = VE_createRecognition();
   if (!VE.rec) {
@@ -1640,7 +1713,7 @@ function VE_doListen() {
 }
 
 function VE_stopListening() {
-  clearTimeout(VE.silenceTimer);
+  VE_clearListenTimers();
   VE.isStarting = false;
   try { if (VE.rec) VE.rec.stop(); } catch(e) {
     try { if (VE.rec) VE.rec.abort(); } catch(_) {}
@@ -1818,6 +1891,14 @@ function _initVoiceModal() {
 
 async function VE_initBargeIn(existingStream) {
   try {
+    if (VE.isMobile) {
+      if (existingStream) {
+        try { existingStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
+      }
+      VE_releaseBargeMic();
+      return;
+    }
+
     VE.micStream = existingStream || await VE_getMicStream();
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -1901,7 +1982,7 @@ window.closeVoiceModal = function() {
   VE_synthStop();
 
   // 3. Stop + destroy SR
-  clearTimeout(VE.silenceTimer);
+  VE_clearListenTimers();
   VE.isStarting = false;
   VE_destroyRec();
 
@@ -1910,13 +1991,7 @@ window.closeVoiceModal = function() {
   VE.loudFrames = 0;
 
   // 5. Release mic + close AudioContext
-  try { if (VE.audioCtx) VE.audioCtx.close(); } catch(e) {}
-  if (VE.micStream) {
-    try { VE.micStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
-  }
-  VE.audioCtx  = null;
-  VE.analyser  = null;
-  VE.micStream = null;
+  VE_releaseBargeMic();
 
   // 6. Reset state
   VE.sessionId    = null;
