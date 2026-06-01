@@ -1,4 +1,4 @@
-
+﻿
 window.onerror = function(msg, src, line, col, err) {
   console.warn('[MockAI Error]', msg, 'at', src + ':' + line);
   // Always force-hide loader even if something explodes
@@ -9,12 +9,12 @@ window.addEventListener('unhandledrejection', function(e) {
   console.warn('[MockAI Unhandled Promise]', e.reason);
 });
 
-/* ════════════════════════════════════
-   1. LOADER — bulletproof
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   1. LOADER â€” bulletproof
    BUG FIX: Old code relied on window 'load' which never fires
    if a CDN script (Three.js) stalls. Added hard 3s fallback
    that fires regardless. Wrapped in try/catch.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _forceHideLoader() {
   try {
     const l = document.getElementById('loader');
@@ -27,7 +27,7 @@ function _forceHideLoader() {
   } catch(e) {}
 }
 
-// Hard fallback — ALWAYS fires after 3s no matter what
+// Hard fallback â€” ALWAYS fires after 3s no matter what
 const _loaderFallback = setTimeout(_forceHideLoader, 3000);
 
 window.addEventListener('load', function() {
@@ -41,12 +41,12 @@ if (document.readyState === 'complete') {
   setTimeout(_forceHideLoader, 800);
 }
 
-/* ════════════════════════════════════
-   2. TOAST — safe, no XSS
-   BUG FIX: Old code used innerHTML with raw `msg` → XSS risk.
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   2. TOAST â€” safe, no XSS
+   BUG FIX: Old code used innerHTML with raw `msg` â†’ XSS risk.
    Now uses textContent for message content.
    BUG FIX: cursor:none on close button broke mobile touch.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function showToast(msg, type) {
   type = type || 'info';
   try {
@@ -57,7 +57,7 @@ function showToast(msg, type) {
       document.body.appendChild(t);
     }
     var colors  = { success:'#10b981', error:'#ef4444', info:'#6366f1', warning:'#f59e0b' };
-    var icons   = { success:'✓', error:'!', info:'i', warning:'!' };
+    var icons   = { success:'âœ“', error:'!', info:'i', warning:'!' };
     var color   = colors[type] || colors.info;
     var icon    = icons[type]  || 'i';
 
@@ -71,11 +71,11 @@ function showToast(msg, type) {
 
     var msgEl = document.createElement('span');
     msgEl.style.flex = '1';
-    msgEl.textContent = msg; // textContent — no XSS
+    msgEl.textContent = msg; // textContent â€” no XSS
 
     var closeEl = document.createElement('button');
     closeEl.style.cssText = 'background:none;border:none;color:var(--dim,#888);font-size:18px;line-height:1;cursor:pointer'; // fixed: cursor:pointer not none
-    closeEl.textContent = '×';
+    closeEl.textContent = 'Ã—';
     closeEl.setAttribute('aria-label', 'Close notification');
     closeEl.addEventListener('click', function() { t.classList.remove('show'); });
 
@@ -92,9 +92,9 @@ function showToast(msg, type) {
 }
 window.showToast = showToast;
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    3. LOADING STATE
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function setLoading(btn, loading) {
   if (!btn) return;
   try {
@@ -110,12 +110,12 @@ function setLoading(btn, loading) {
 }
 window.setLoading = setLoading;
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    4. THREE.JS 3D BACKGROUND
-   BUG FIX: No error handling if CDN fails → crashed whole script.
-   BUG FIX: script.onload race — THREE not fully available instantly.
+   BUG FIX: No error handling if CDN fails â†’ crashed whole script.
+   BUG FIX: script.onload race â€” THREE not fully available instantly.
    Now: graceful skip if THREE fails. All wrapped in try/catch.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 (function initThree() {
   // Skip on low-end/mobile to save battery & prevent crashes
   if (window.innerWidth < 768 || navigator.maxTouchPoints > 1) return;
@@ -123,7 +123,7 @@ window.setLoading = setLoading;
   var script = document.createElement('script');
   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
   script.onerror = function() {
-    console.warn('[Three.js] CDN failed — skipping 3D background');
+    console.warn('[Three.js] CDN failed â€” skipping 3D background');
   };
   script.onload = function() {
     // Small delay ensures THREE is fully parsed
@@ -227,14 +227,14 @@ function _initThreeScene() {
   animate();
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    5. SCROLL REVEAL
-   BUG FIX: querySelectorAll at parse time — elements may not exist.
+   BUG FIX: querySelectorAll at parse time â€” elements may not exist.
    Moved to DOMContentLoaded in section 19.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initScrollReveal() {
   if (!('IntersectionObserver' in window)) {
-    // Fallback for old browsers — just show everything
+    // Fallback for old browsers â€” just show everything
     document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) {
       el.classList.add('visible');
     });
@@ -251,11 +251,11 @@ function _initScrollReveal() {
   document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) { ro.observe(el); });
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    6. NAV
-   BUG FIX: getElementById at parse time — elements not ready.
+   BUG FIX: getElementById at parse time â€” elements not ready.
    Moved to DOMContentLoaded.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initNav() {
   window.addEventListener('scroll', function() {
     var nav = document.getElementById('nav');
@@ -274,9 +274,9 @@ function _initNav() {
   });
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    7. SMOOTH SCROLL
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initSmoothScroll() {
   document.querySelectorAll('a[href^="#"]').forEach(function(a) {
     a.addEventListener('click', function(e) {
@@ -286,10 +286,10 @@ function _initSmoothScroll() {
   });
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    8. FAQ
    BUG FIX: parentElement access without null check.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.toggleFaq = function(btn) {
   if (!btn) return;
   var item = btn.parentElement;
@@ -308,10 +308,10 @@ window.toggleFaq = function(btn) {
   }
 };
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    9. BACKEND CHECK
-   BUG FIX: typeof guard — MockAI may not be loaded yet.
-════════════════════════════════════ */
+   BUG FIX: typeof guard â€” MockAI may not be loaded yet.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function checkBackend() {
   try {
     if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') {
@@ -326,10 +326,10 @@ async function checkBackend() {
   }
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    10. RESUME UPLOAD
    BUG FIX: MockAI.uploadResume called without existence check.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initResumeChips() {
   document.querySelectorAll('.role-chips .role-chip').forEach(function(chip) {
     chip.addEventListener('click', function() {
@@ -343,7 +343,7 @@ function _initResumeChips() {
   if (resumeFile) {
     resumeFile.addEventListener('change', function() {
       var disp = document.getElementById('resumeFileName');
-      if (disp && this.files[0]) disp.textContent = '📄 ' + this.files[0].name;
+      if (disp && this.files[0]) disp.textContent = 'ðŸ“„ ' + this.files[0].name;
     });
   }
 
@@ -353,7 +353,7 @@ function _initResumeChips() {
       var drop = document.getElementById('dashResumeDrop');
       if (drop && this.files[0]) {
         var dt = drop.querySelector('.drop-text');
-        if (dt) dt.textContent = '📄 ' + this.files[0].name;
+        if (dt) dt.textContent = 'ðŸ“„ ' + this.files[0].name;
       }
     });
   }
@@ -420,10 +420,10 @@ function renderResumeResult(analysis, el) {
     + '<div><div style="font-weight:700;font-size:15px;margin-bottom:4px">ATS Score</div>'
     + '<div style="font-size:12px;color:var(--muted)">' + _esc(analysis.summary || 'Analysis complete.') + '</div>'
     + '</div></div>'
-    + (skills   ? '<div><div class="resume-section-label">✓ Skills Detected</div><div class="res-tags">'  + skills   + '</div></div>' : '')
-    + (missing  ? '<div><div class="resume-section-label">⚠ Missing Keywords</div><div class="res-tags">' + missing  + '</div></div>' : '')
-    + (strengths? '<div><div class="resume-section-label">💪 Strengths</div><ul class="res-improve-list">' + strengths+ '</ul></div>'   : '')
-    + (improv   ? '<div><div class="resume-section-label">💡 Improvements</div><ul class="res-improve-list">'+ improv  + '</ul></div>'   : '')
+    + (skills   ? '<div><div class="resume-section-label">âœ“ Skills Detected</div><div class="res-tags">'  + skills   + '</div></div>' : '')
+    + (missing  ? '<div><div class="resume-section-label">âš  Missing Keywords</div><div class="res-tags">' + missing  + '</div></div>' : '')
+    + (strengths? '<div><div class="resume-section-label">ðŸ’ª Strengths</div><ul class="res-improve-list">' + strengths+ '</ul></div>'   : '')
+    + (improv   ? '<div><div class="resume-section-label">ðŸ’¡ Improvements</div><ul class="res-improve-list">'+ improv  + '</ul></div>'   : '')
     + '</div>';
 }
 
@@ -432,9 +432,9 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    11. AUTH MODAL
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function openAuthModal(mode) {
   mode = mode || 'login';
   var m = document.getElementById('authModal');
@@ -522,10 +522,10 @@ function _initAuthModal() {
   }
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    12. AUTH UI UPDATE
    BUG FIX: getUser/isLoggedIn called without typeof guard.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function updateAuthUI() {
   try {
     var user      = (typeof getUser    === 'function') ? getUser()    : null;
@@ -551,10 +551,10 @@ function updateAuthUI() {
   }
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    13. AI INTERVIEW PANEL (text mode)
    BUG FIX: interviewStart/interviewMessage called without existence check.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 var aiMode        = 'mixed';
 var aiInterviewId = null;
 var aiIsTyping    = false;
@@ -563,7 +563,7 @@ var modeLabels = { mixed:'Full Mock Interview', hr:'HR Behavioral Interview', te
 var modeIntros = {
   mixed:     "Hello! I'm Alex, your AI interviewer. I'll mix behavioral and technical questions. Say **Ready** or type your answer to begin!",
   hr:        "Hi! I'm Alex. Today we're focusing on **HR and behavioral** questions using the STAR method. Tell me about yourself to start!",
-  technical: "Hey! I'm Alex. Let's dive into **technical questions** — DS&A, system design, and problem-solving. Ready for your first problem?"
+  technical: "Hey! I'm Alex. Let's dive into **technical questions** â€” DS&A, system design, and problem-solving. Ready for your first problem?"
 };
 
 window.setAIMode = function(mode) {
@@ -624,7 +624,7 @@ function updateFeedback(feedback) {
     var val = document.getElementById(f[1]);
     var score = f[2];
     if (bar) bar.style.width = score ? score + '%' : '0%';
-    if (val) val.textContent = score ? score + '%' : '—';
+    if (val) val.textContent = score ? score + '%' : 'â€”';
   });
   var tips = feedback && feedback.tips;
   if (tips && tips.length) {
@@ -703,17 +703,17 @@ window.loadQuick = function(chip) {
   if (aiInput) aiInput.focus();
 };
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    14. DASHBOARD
    BUG FIX: loadDashboard was called in DOMContentLoaded AND
-   immediately — double invocation. Now single call in DOMContentLoaded.
-════════════════════════════════════ */
+   immediately â€” double invocation. Now single call in DOMContentLoaded.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function relDate(d) {
   try {
     var diff = Date.now() - new Date(d).getTime();
     var days = Math.floor(diff / 86400000);
     return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : (days + 'd ago');
-  } catch(e) { return '—'; }
+  } catch(e) { return 'â€”'; }
 }
 function scoreClass(s) { return s >= 80 ? 'sp-hi' : s >= 65 ? 'sp-mid' : 'sp-lo'; }
 
@@ -739,8 +739,8 @@ async function loadDashboard() {
     setText('dsAvgScore', avg + '%');
     setText('dsPracticeHours', hrs + 'h');
     setText('dsStreak', streak);
-    setTextClass('dsInProgress', inp > 0 ? ('↑ ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
-    setTextClass('dsScoreChange', avg >= 70 ? '↑ Good performance' : '↗ Keep practicing', 'up');
+    setTextClass('dsInProgress', inp > 0 ? ('â†‘ ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
+    setTextClass('dsScoreChange', avg >= 70 ? 'â†‘ Good performance' : 'â†— Keep practicing', 'up');
     setTextClass('dsHoursChange', tot + ' total sessions', '');
 
     if (d.weeklyScores && d.weeklyScores.length) {
@@ -752,7 +752,7 @@ async function loadDashboard() {
       bars.forEach(function(bar, i) {
         var s = scores[i];
         bar.style.height = s ? Math.max(8, Math.round((s.score/mx)*90))+'%' : '8%';
-        bar.title = s ? (s.score + '% — ' + relDate(s.date)) : '';
+        bar.title = s ? (s.score + '% â€” ' + relDate(s.date)) : '';
       });
     }
 
@@ -773,14 +773,14 @@ async function loadDashboard() {
           var type  = (iv.interviewType || 'mixed').replace(/-/g,' ');
           return '<tr>'
             + '<td>' + _esc(iv.jobRole||'Interview') + '</td>'
-            + '<td>' + _esc(iv.company||'—') + '</td>'
+            + '<td>' + _esc(iv.company||'â€”') + '</td>'
             + '<td style="text-transform:capitalize">' + _esc(type) + '</td>'
             + '<td><span class="score-pill ' + scoreClass(score) + '">' + score + '%</span></td>'
             + '<td>' + relDate(iv.createdAt) + '</td>'
             + '</tr>';
         }).join('');
       } else {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet — start your first AI interview! 🚀</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet â€” start your first AI interview! ðŸš€</td></tr>';
       }
     }
 
@@ -814,33 +814,33 @@ function setBar(barId, valId, score) {
   var bar = document.getElementById(barId);
   var val = document.getElementById(valId);
   if (bar) bar.style.width = (score||0) + '%';
-  if (val) val.textContent = score ? score + '%' : '—';
+  if (val) val.textContent = score ? score + '%' : 'â€”';
 }
 
-/* ── Sessions Panel ── */
+/* â”€â”€ Sessions Panel â”€â”€ */
 function loadSessionsPanel(recent) {
   var el = document.getElementById('sessionsContent');
   if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) return;
   if (!recent.length) {
-    el.innerHTML = '<div class="empty-state"><div class="es-icon">🎤</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
+    el.innerHTML = '<div class="empty-state"><div class="es-icon">ðŸŽ¤</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
     return;
   }
   el.innerHTML = recent.map(function(iv) {
     var score = (iv.feedback && iv.feedback.overallScore) || 0;
     var col   = score >= 80 ? '#10b981' : score >= 65 ? '#6366f1' : '#f59e0b';
     return '<div class="session-card">'
-      + '<div><div class="sc-role">' + _esc(iv.jobRole||'Interview') + ' <span style="font-weight:400;color:var(--muted)">@ ' + _esc(iv.company||'—') + '</span></div>'
+      + '<div><div class="sc-role">' + _esc(iv.jobRole||'Interview') + ' <span style="font-weight:400;color:var(--muted)">@ ' + _esc(iv.company||'â€”') + '</span></div>'
       + '<div class="sc-meta"><span style="text-transform:capitalize">' + _esc((iv.interviewType||'mixed').replace(/-/g,' ')) + '</span>'
-      + '<span>' + (iv.durationMinutes ? iv.durationMinutes+'m' : '—') + '</span>'
+      + '<span>' + (iv.durationMinutes ? iv.durationMinutes+'m' : 'â€”') + '</span>'
       + '<span>' + relDate(iv.createdAt) + '</span></div></div>'
       + '<div><div class="sc-score" style="color:' + col + '">' + score + '%</div>'
       + '<div class="sc-date">' + relDate(iv.createdAt) + '</div></div></div>';
   }).join('');
 }
 
-/* ── Analytics Panel ── */
+/* â”€â”€ Analytics Panel â”€â”€ */
 function loadAnalyticsPanel(d) {
   var el = document.getElementById('analyticsContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -858,7 +858,7 @@ function loadAnalyticsPanel(d) {
 
   var scoreBars = (d.weeklyScores||[]).map(function(s) {
     var h = Math.max(8, Math.round((s.score/100)*80));
-    return '<div style="flex:1;height:' + h + 'px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#6366f1,rgba(99,102,241,0.1));min-width:8px" title="' + s.score + '% — ' + relDate(s.date) + '"></div>';
+    return '<div style="flex:1;height:' + h + 'px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#6366f1,rgba(99,102,241,0.1));min-width:8px" title="' + s.score + '% â€” ' + relDate(s.date) + '"></div>';
   }).join('') || '<div style="color:var(--dim);font-size:13px;align-self:center">Complete sessions to see trend</div>';
 
   var stats = d.stats || {};
@@ -881,7 +881,7 @@ function _statBox(val, label, color) {
     + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + label + '</div></div>';
 }
 
-/* ── Progress Panel ── */
+/* â”€â”€ Progress Panel â”€â”€ */
 function loadProgressPanel(d) {
   var el = document.getElementById('progressContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -910,7 +910,7 @@ function loadProgressPanel(d) {
     + '<div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">' + skillRows + '</div></div>';
 }
 
-/* ── Coach Panel ── */
+/* â”€â”€ Coach Panel â”€â”€ */
 function loadCoachPanel(recs, skillBreakdown) {
   var el = document.getElementById('coachContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -919,7 +919,7 @@ function loadCoachPanel(recs, skillBreakdown) {
   var weakSkill  = entries.length ? entries[0][0] : 'communication';
   var recItems   = recs.map(function(r){
     return '<div class="coach-rec"><div class="cr-cat">AI Recommendation</div><div class="cr-text">' + _esc(r) + '</div></div>';
-  }).join('') || '<div class="empty-state" style="padding:40px"><div class="es-icon">🤖</div><div class="es-title">Complete an interview</div><div class="es-sub">Your AI Coach recommendations will appear here</div></div>';
+  }).join('') || '<div class="empty-state" style="padding:40px"><div class="es-icon">ðŸ¤–</div><div class="es-title">Complete an interview</div><div class="es-sub">Your AI Coach recommendations will appear here</div></div>';
 
   el.innerHTML = '<div style="margin-bottom:16px;padding:16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:var(--r)">'
     + '<div style="font-size:12px;color:var(--primary);font-weight:700;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">Focus Area</div>'
@@ -927,7 +927,7 @@ function loadCoachPanel(recs, skillBreakdown) {
     + '<div class="coach-recs">' + recItems + '</div>';
 }
 
-/* ── Settings Panel ── */
+/* â”€â”€ Settings Panel â”€â”€ */
 function loadSettingsPanel() {
   var el = document.getElementById('settingsContent');
   if (!el) return;
@@ -950,25 +950,25 @@ function _sfField(label, val) {
   return '<div class="sf-field"><div class="sf-label">' + _esc(label) + '</div><input class="sf-input" value="' + _esc(val) + '" readonly></div>';
 }
 
-/* ── Logout ── */
+/* â”€â”€ Logout â”€â”€ */
 window.handleLogout = function() {
   if (typeof clearAuth === 'function') clearAuth();
   updateAuthUI();
   showToast('Signed out successfully.', 'info');
-  ['dsTotalSessions','dsAvgScore','dsPracticeHours','dsStreak'].forEach(function(id) { setText(id,'—'); });
+  ['dsTotalSessions','dsAvgScore','dsPracticeHours','dsStreak'].forEach(function(id) { setText(id,'â€”'); });
   var tbody = document.getElementById('historyTbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Sign in to see your interview history 🔐</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Sign in to see your interview history ðŸ”</td></tr>';
   ['sessionsContent','analyticsContent','progressContent','coachContent'].forEach(function(id) {
     var el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="empty-state"><div class="es-icon">🔐</div><div class="es-title">Sign in to view</div></div>';
+    if (el) el.innerHTML = '<div class="empty-state"><div class="es-icon">ðŸ”</div><div class="es-title">Sign in to view</div></div>';
   });
   var sc = document.getElementById('settingsContent');
-  if (sc) sc.innerHTML = '<div class="empty-state"><div class="es-icon">⚙️</div><div class="es-title">Sign in to manage settings</div></div>';
+  if (sc) sc.innerHTML = '<div class="empty-state"><div class="es-icon">âš™ï¸</div><div class="es-title">Sign in to manage settings</div></div>';
 };
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    15. DASHBOARD TABS
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function switchDashTab(section) {
   document.querySelectorAll('.ds-item').forEach(function(i) { i.classList.toggle('active', i.dataset.section === section); });
   document.querySelectorAll('.dash-panel').forEach(function(p) { p.classList.toggle('active', p.id === 'panel-' + section); });
@@ -985,10 +985,10 @@ function _initDashTabs() {
   });
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    16. HERO STATS
    BUG FIX: typeof guard on MockAI.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadHeroStats() {
   try {
     if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') return;
@@ -999,12 +999,12 @@ async function loadHeroStats() {
       if (uc) uc.textContent = (1247).toLocaleString(); // stable number, no flicker
       if (st) st.textContent = '94';
     }
-  } catch(e) { /* silent — hero stats are cosmetic */ }
+  } catch(e) { /* silent â€” hero stats are cosmetic */ }
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    17. EMAIL VERIFICATION
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function handleEmailVerification() {
   try {
     var params = new URLSearchParams(window.location.search);
@@ -1020,11 +1020,11 @@ async function handleEmailVerification() {
   }
 }
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    18. WIRE BUTTONS
    BUG FIX: Was called twice (DOMContentLoaded + readyState check).
    Now only called once from DOMContentLoaded.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function wireButtons() {
   var navSignIn = document.getElementById('navSignIn');
   if (navSignIn) navSignIn.addEventListener('click', function() { openAuthModal('login'); });
@@ -1065,26 +1065,26 @@ function wireButtons() {
   });
 }
 
-/* ════════════════════════════════════════════════════════════════
-   VOICE INTERVIEW ENGINE v5 — Chrome-Hardened, Mobile-Safe
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   VOICE INTERVIEW ENGINE v5 â€” Chrome-Hardened, Mobile-Safe
    
    All fixes:
-   ✅ TTS warmup on first user gesture (Chrome requires this)
-   ✅ Chrome TTS keepalive pinger every 5s (prevents silent death)
-   ✅ Per-chunk TTS watchdog (nudges if Chrome stalls mid-utterance)
-   ✅ Page visibility handler (resumes TTS if tab was backgrounded)
-   ✅ Fresh SR instance every listen cycle (no stale SR bug)
-   ✅ SR mutex lock (isStarting) prevents double-start
-   ✅ Barge-in uses RMS over PCM (not avg freq bin) — accurate loudness
-   ✅ 35 consecutive loud frames before barge-in (background noise rejected)
-   ✅ silenceDelay set correctly on VE object (was undefined before)
-   ✅ Mic stream tracks stopped on close (mic indicator goes off)
-   ✅ AudioContext closed on modal close (no memory leak)
-   ✅ VAD monitor only runs during 'speaking' phase
-   ✅ Graceful degradation on browsers without SpeechRecognition
+   âœ… TTS warmup on first user gesture (Chrome requires this)
+   âœ… Chrome TTS keepalive pinger every 5s (prevents silent death)
+   âœ… Per-chunk TTS watchdog (nudges if Chrome stalls mid-utterance)
+   âœ… Page visibility handler (resumes TTS if tab was backgrounded)
+   âœ… Fresh SR instance every listen cycle (no stale SR bug)
+   âœ… SR mutex lock (isStarting) prevents double-start
+   âœ… Barge-in uses RMS over PCM (not avg freq bin) â€” accurate loudness
+   âœ… 35 consecutive loud frames before barge-in (background noise rejected)
+   âœ… silenceDelay set correctly on VE object (was undefined before)
+   âœ… Mic stream tracks stopped on close (mic indicator goes off)
+   âœ… AudioContext closed on modal close (no memory leak)
+   âœ… VAD monitor only runs during 'speaking' phase
+   âœ… Graceful degradation on browsers without SpeechRecognition
 ================================================================ */
 
-/* ─── TTS Warmup ─── */
+/* â”€â”€â”€ TTS Warmup â”€â”€â”€ */
 var _ttsWarmedUp = false;
 function VE_warmupTTS() {
   if (_ttsWarmedUp || !window.speechSynthesis) return;
@@ -1099,7 +1099,7 @@ function VE_warmupTTS() {
   document.addEventListener(ev, VE_warmupTTS, { once: true, passive: true });
 });
 
-/* ─── Chrome TTS keepalive pinger ─── */
+/* â”€â”€â”€ Chrome TTS keepalive pinger â”€â”€â”€ */
 var _synthPinger = null;
 function VE_startSynthPinger() {
   VE_stopSynthPinger();
@@ -1114,16 +1114,16 @@ function VE_stopSynthPinger() {
   _synthPinger = null;
 }
 
-/* ─── Tab visibility fix ─── */
+/* â”€â”€â”€ Tab visibility fix â”€â”€â”€ */
 document.addEventListener('visibilitychange', function() {
   if (!document.hidden && window.speechSynthesis && window.speechSynthesis.paused) {
     window.speechSynthesis.resume();
   }
 });
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    VE STATE
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 var VE = {
   active:       false,
   sessionId:    null,
@@ -1146,39 +1146,59 @@ var VE = {
   micStream:      null,
   vadRunning:     false,
   loudFrames:     0,
-  BARGE_THRESHOLD: 18,   // RMS threshold — tune 12–25 per environment
-  BARGE_FRAMES:    35,   // ~580ms sustained voice before interrupt
+  BARGE_THRESHOLD: 0.5,   // RMS threshold â€” tune 12â€“25 per environment
+  BARGE_FRAMES:    8,   // ~580ms sustained voice before interrupt
+  ttsRunId:        0,
+  ttsHardTimer:    null,
 };
 
-/* ─── Voice Picker ─── */
+/* â”€â”€â”€ Voice Picker â”€â”€â”€ */
+function VE_getVoiceList() {
+  return VE.synth ? (VE.synth.getVoices() || []) : [];
+}
+
+function VE_voiceLangMatches(voice, lang) {
+  if (!voice || !voice.lang) return false;
+  var voiceLang = voice.lang.toLowerCase();
+  var desired = (lang || '').toLowerCase();
+  var base = desired.split('-')[0];
+
+  return voiceLang === desired || voiceLang === base || voiceLang.indexOf(base + '-') === 0;
+}
+
+function VE_pickLocalVoice(lang) {
+  var localVoices = VE_getVoiceList().filter(function(voice) {
+    return voice && voice.localService === true && VE_voiceLangMatches(voice, lang);
+  });
+
+  if (!localVoices.length) return null;
+
+  var preferredName = /female|woman|zira|aria|jenny|samantha|karen|ava|allison|moira|tessa|fiona|lekha|neerja/i;
+  return localVoices.find(function(voice) { return preferredName.test(voice.name || ''); }) || localVoices[0];
+}
+
 function VE_pickVoices() {
   if (!VE.synth) return;
-  var all = VE.synth.getVoices() || [];
-  if (!all.length) return;
-  var EN_PREF = ['Samantha','Karen','Moira','Tessa','Fiona','Ava','Allison',
-    'Microsoft Aria Online (Natural)','Microsoft Jenny Online (Natural)',
-    'Google UK English Female','Microsoft Aria','Microsoft Zira'];
-  VE.femaleVoiceEN = EN_PREF.reduce(function(f,n){return f||all.find(function(v){return v.name===n;});},null)
-    || all.find(function(v){return v.lang.startsWith('en-')&&/female|woman/i.test(v.name);})
-    || all.find(function(v){return v.lang==='en-GB';})
-    || all.find(function(v){return v.lang.startsWith('en');})
-    || null;
-  var TE_PREF = ['Google తెలుగు','Google Telugu','Lekha','Neerja'];
-  VE.femaleVoiceTE = TE_PREF.reduce(function(f,n){return f||all.find(function(v){return v.name===n;});},null)
-    || all.find(function(v){return v.lang==='te-IN'||v.lang==='te';})
-    || null;
+  VE.femaleVoiceEN = VE_pickLocalVoice('en-US');
+  VE.femaleVoiceTE = VE_pickLocalVoice('te-IN');
 }
+
+function VE_getVoiceForLang(lang) {
+  var voice = lang === 'te-IN' ? VE.femaleVoiceTE : VE.femaleVoiceEN;
+  return voice && voice.localService === true ? voice : null;
+}
+
 if (VE.synth) {
   VE_pickVoices();
   VE.synth.onvoiceschanged = VE_pickVoices;
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TTS
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VE_speak(rawText, onDone) {
   if (!rawText || !rawText.trim()) { if (onDone) onDone(); return; }
-  VE_synthStop();
+  if (!VE.synth || typeof SpeechSynthesisUtterance === 'undefined') { if (onDone) onDone(); return; }
 
   var text = rawText
     .replace(/\*\*(.*?)\*\*/g, '$1')
@@ -1186,92 +1206,145 @@ function VE_speak(rawText, onDone) {
     .replace(/\n+/g, ' ')
     .trim();
 
+  var chunks = VE_splitText(text);
+  if (!chunks.length) { if (onDone) onDone(); return; }
+
+  var idx = 0;
+  var done = false;
+  var runId = ++VE.ttsRunId;
+
   VE_setPhase('speaking');
   VE_showSpeechBox(rawText);
+  VE_startBargeMonitor();
   VE_startSynthPinger();
 
-  var chunks  = VE_splitText(text);
-  var idx     = 0;
-  var aborted = false;
+  clearTimeout(VE.ttsHardTimer);
+  VE.ttsHardTimer = setTimeout(function() {
+    if (runId !== VE.ttsRunId || !VE.active || VE.phase !== 'speaking') return;
+    VE_synthStop();
+    VE_setPhase('listening');
+    VE_setStatus(VE_STATUS.listening);
+    VE_doListen();
+  }, 60000);
 
-  function speakChunk() {
+  function finish(callDone) {
+    if (done || runId !== VE.ttsRunId) return;
+    done = true;
     clearTimeout(VE.ttsWatchdog);
-    if (aborted || !VE.active || idx >= chunks.length) {
-      VE_stopSynthPinger();
-      if (!aborted && onDone) onDone();
+    clearTimeout(VE.ttsHardTimer);
+    VE_stopSynthPinger();
+    if (callDone && onDone) onDone();
+  }
+
+  function prepareAndStart() {
+    if (VE.synth.paused) {
+      try { VE.synth.resume(); } catch(e) {}
+    }
+
+    if (VE.synth.speaking || VE.synth.pending) {
+      try { VE.synth.cancel(); } catch(e) {}
+      setTimeout(function() {
+        if (runId === VE.ttsRunId && VE.active) speakChunk(false);
+      }, 90);
       return;
     }
 
-    var chunk = chunks[idx];
-    var utt   = new SpeechSynthesisUtterance(chunk);
-    var isTE  = VE.detectedLang === 'te-IN';
-    utt.voice  = isTE ? (VE.femaleVoiceTE || VE.femaleVoiceEN) : VE.femaleVoiceEN;
-    utt.lang   = isTE ? 'te-IN' : 'en-US';
-    utt.rate   = 1.0;
-    utt.volume = 1.0;
-    utt.pitch  = /\?/.test(chunk) ? 1.28
-               : /great|excellent|good answer|well done/i.test(chunk) ? 1.35
-               : /algorithm|complexity|system design/i.test(chunk) ? 1.15
-               : 1.22;
+    speakChunk(false);
+  }
 
-    // Per-chunk watchdog — nudge Chrome if it stalls
-    VE.ttsWatchdog = setTimeout(function() {
-      if (VE.synth && VE.synth.speaking) {
-        VE.synth.pause();
-        setTimeout(function() { if (VE.active && VE.synth) VE.synth.resume(); }, 80);
-      }
-    }, 10000);
+  function speakChunk(forceDefaultVoice) {
+    clearTimeout(VE.ttsWatchdog);
+
+    if (done || runId !== VE.ttsRunId || !VE.active) return finish(false);
+    if (idx >= chunks.length) return finish(true);
+
+    var chunk = chunks[idx];
+    var lang = VE.detectedLang === 'te-IN' ? 'te-IN' : 'en-US';
+    var voice = forceDefaultVoice ? null : VE_getVoiceForLang(lang);
+    var utt = new SpeechSynthesisUtterance(chunk);
+    var started = false;
+    var startWatchdog = null;
+
+    if (voice) utt.voice = voice;
+    utt.lang = lang;
+    utt.rate = 1.0;
+    utt.volume = 1.0;
+    utt.pitch = /\?/.test(chunk) ? 1.18
+      : /great|excellent|good answer|well done/i.test(chunk) ? 1.22
+      : /algorithm|complexity|system design/i.test(chunk) ? 1.08
+      : 1.12;
+
+    function clearChunkTimers() {
+      clearTimeout(startWatchdog);
+      clearTimeout(VE.ttsWatchdog);
+    }
+
+    utt.onstart = function() {
+      started = true;
+    };
 
     utt.onend = function() {
-      clearTimeout(VE.ttsWatchdog);
+      clearChunkTimers();
+      if (runId !== VE.ttsRunId || done) return;
       idx++;
-      if (!VE.active || aborted) return;
-      if (idx >= chunks.length) {
-        VE_stopSynthPinger();
-        if (onDone) onDone();
-      } else {
-        setTimeout(speakChunk, 50);
-      }
+      speakChunk(false);
     };
 
     utt.onerror = function(e) {
-      clearTimeout(VE.ttsWatchdog);
-      if (e.error === 'interrupted' || e.error === 'canceled') {
-        aborted = true; VE_stopSynthPinger(); return;
-      }
+      clearChunkTimers();
+      if (runId !== VE.ttsRunId || done) return;
+      if (e && (e.error === 'interrupted' || e.error === 'canceled')) return;
+      if (!forceDefaultVoice) return speakChunk(true);
       idx++;
-      if (VE.active && !aborted) setTimeout(speakChunk, 80);
+      speakChunk(false);
     };
 
-    if (VE.synth) VE.synth.speak(utt);
-
-    // Chrome stall safety — retry if synth doesn't start within 600ms
-    setTimeout(function() {
-      if (!aborted && VE.active && VE.phase === 'speaking' && VE.synth && !VE.synth.speaking && !VE.synth.pending) {
-        console.warn('[TTS] Chrome stall — retrying chunk');
-        if (VE.synth) VE.synth.speak(utt);
+    startWatchdog = setTimeout(function() {
+      if (started || runId !== VE.ttsRunId || done || !VE.active || VE.phase !== 'speaking') return;
+      try { VE.synth.cancel(); } catch(e) {}
+      if (!forceDefaultVoice) {
+        setTimeout(function() {
+          if (runId === VE.ttsRunId && VE.active) speakChunk(true);
+        }, 90);
+      } else {
+        idx++;
+        speakChunk(false);
       }
-    }, 600);
+    }, 2500);
+
+    VE.ttsWatchdog = setTimeout(function() {
+      if (runId !== VE.ttsRunId || done || !VE.synth || !VE.synth.speaking) return;
+      try {
+        VE.synth.pause();
+        VE.synth.resume();
+      } catch(e) {}
+    }, Math.max(10000, chunk.length * 120 + 3000));
+
+    try {
+      if (VE.synth.paused) VE.synth.resume();
+      VE.synth.speak(utt);
+    } catch(e) {
+      clearChunkTimers();
+      if (!forceDefaultVoice) return speakChunk(true);
+      idx++;
+      speakChunk(false);
+    }
   }
 
-  speakChunk();
-
-  // 60s hard fallback — if TTS completely dies
-  setTimeout(function() {
-    if (VE.phase === 'speaking' && VE.active) {
-      console.warn('[TTS] 60s hard fallback — forcing listen');
-      VE_synthStop();
-      VE_setPhase('listening');
-      VE_setStatus(VE_STATUS.listening);
-      VE_doListen();
-    }
-  }, 60000);
+  prepareAndStart();
 }
 
 function VE_synthStop() {
   clearTimeout(VE.ttsWatchdog);
+  clearTimeout(VE.ttsHardTimer);
   VE_stopSynthPinger();
-  try { if (VE.synth) VE.synth.cancel(); } catch(e) {}
+  VE.ttsRunId++;
+
+  if (!VE.synth) return;
+  try {
+    if (VE.synth.paused) VE.synth.resume();
+    if (VE.synth.speaking || VE.synth.pending) VE.synth.cancel();
+  } catch(e) {}
 }
 
 function VE_splitText(text) {
@@ -1285,9 +1358,9 @@ function VE_splitText(text) {
   return out.filter(Boolean);
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    BARGE-IN VAD (RMS-based)
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VE_startBargeMonitor() {
   if (VE.vadRunning || !VE.analyser) return;
   VE.vadRunning = true;
@@ -1305,7 +1378,7 @@ function VE_startBargeMonitor() {
       for (var i = 0; i < bufLen; i++) sum += timeBuf[i] * timeBuf[i];
       var rms = Math.sqrt(sum / bufLen) * 100;
 
-      if (rms > VE.BARGE_THRESHOLD) {
+      if (rms > VE.BARGE_THRESHOLD ) {
         VE.loudFrames++;
       } else {
         VE.loudFrames = Math.max(0, VE.loudFrames - 2); // decay
@@ -1323,21 +1396,28 @@ function VE_startBargeMonitor() {
   }
   frame();
 }
-
 function VE_handleBargeIn() {
-  console.log('[VAD] Barge-in detected');
+
   VE_synthStop();
-  VE.finalText   = '';
+
+  VE.finalText = '';
   VE.interimText = '';
+
   VE_setPhase('listening');
   VE_setStatus(VE_STATUS.listening);
-  VE_stopListening();
-  setTimeout(function() { VE_doListen(); }, 150);
+
+  try {
+    VE.rec?.abort();
+  } catch(e){}
+
+  setTimeout(() => {
+    VE_doListen();
+  }, 100);
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    SPEECH RECOGNITION
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VE_destroyRec() {
   if (!VE.rec) return;
   VE.rec.onresult = null;
@@ -1403,7 +1483,6 @@ function VE_createRecognition() {
       return;
     }
     if (e.error === 'not-allowed') { showToast('Microphone permission denied.', 'error'); return; }
-    console.warn('[SR] Error:', e.error);
     if (VE.phase === 'listening' && VE.active) {
       VE_setStatus('Reconnecting...');
       setTimeout(function(){ VE_doListen(); }, 600);
@@ -1447,7 +1526,6 @@ function VE_doListen() {
     VE.rec.lang = VE.detectedLang;
     VE.rec.start();
   } catch(e) {
-    console.warn('[SR] Start error:', e.message);
     VE.isStarting = false;
     setTimeout(function(){ VE_doListen(); }, 400);
   }
@@ -1460,30 +1538,30 @@ function VE_stopListening() {
   try { if (VE.rec) VE.rec.abort(); } catch(e) {}
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    LANGUAGE DETECTION
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VE_detectLang(text) {
   var teChar = (text.match(/[\u0C00-\u0C7F]/g)||[]).length;
   if (teChar > 1) return 'te-IN';
   if (/\b(nenu|meeru|idi|adi|cheppandi|telugu|ante|avunu|kaadu|neeku|mana|undi|ledu)\b/i.test(text)) return 'te-IN';
-  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|తెలుగు/i.test(text)) return 'te-IN';
+  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|à°¤à±†à°²à±à°—à±/i.test(text)) return 'te-IN';
   if (/switch.*english|in english|back.*english/i.test(text)) return 'en-US';
   return null;
 }
 function VE_updateLangBadge() {
   var el   = document.getElementById('vLangIndicator');
   var isTE = VE.detectedLang === 'te-IN';
-  if (el) { el.textContent = isTE ? '🇮🇳 తెలుగు' : '🇬🇧 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
+  if (el) { el.textContent = isTE ? 'ðŸ‡®ðŸ‡³ à°¤à±†à°²à±à°—à±' : 'ðŸ‡¬ðŸ‡§ English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    PHASE & UI
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 var VE_STATUS = {
-  speaking:   '▶ Priya is speaking...',
-  listening:  '🎤 Listening — speak now',
-  processing: '⟳ Processing your answer...',
+  speaking:   'â–¶ Priya is speaking...',
+  listening:  'ðŸŽ¤ Listening â€” speak now',
+  processing: 'âŸ³ Processing your answer...',
   idle:       'Ready',
 };
 
@@ -1523,9 +1601,9 @@ function VE_showTranscript(text) {
   if (el) el.textContent = text;
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    SUBMIT ANSWER
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function VE_submitAnswer(text) {
   if (!text || !text.trim() || VE.phase === 'processing') return;
   var words = text.trim().split(/\s+/).length;
@@ -1541,7 +1619,7 @@ async function VE_submitAnswer(text) {
   if (box) box.innerHTML = '<span style="opacity:.5;font-style:italic">Thinking...</span>';
 
   try {
-    if (/telugu|తెలుగు|తెలుగులో|మాట్లాడు|matladu/i.test(text)) {
+    if (/telugu|à°¤à±†à°²à±à°—à±|à°¤à±†à°²à±à°—à±à°²à±‹|à°®à°¾à°Ÿà±à°²à°¾à°¡à±|matladu/i.test(text)) {
       VE.detectedLang = 'te-IN'; VE.userLanguage = 'telugu'; VE_updateLangBadge();
     }
     var langPrefix = VE.userLanguage === 'telugu' ? '[LANGUAGE=telugu] ' : '[LANGUAGE=english] ';
@@ -1562,10 +1640,9 @@ async function VE_submitAnswer(text) {
       });
     }
   } catch(err) {
-    console.error('[VE] Submit error:', err && err.message);
-    showToast('AI error — listening again.', 'error');
+    showToast('AI error â€” listening again.', 'error');
     VE_setPhase('idle');
-    VE_setStatus('Error — trying again...');
+    VE_setStatus('Error â€” trying again...');
     if (box) box.textContent = '';
     setTimeout(function() { if (VE.active) VE_doListen(); }, 1500);
   }
@@ -1576,14 +1653,14 @@ function VE_updateScores(fb) {
     var el = document.getElementById(pair[0]);
     var s  = pair[1];
     if (!el) return;
-    el.textContent = s != null ? s + '%' : '—';
+    el.textContent = s != null ? s + '%' : 'â€”';
     el.style.color = s >= 80 ? '#10b981' : s >= 60 ? '#6366f1' : '#f59e0b';
   });
 }
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    OPEN VOICE MODAL
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.startVoiceInterview = function() {
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) { openAuthModal('login'); showToast('Sign in to use Voice Interview.', 'info'); return; }
@@ -1600,9 +1677,9 @@ window.startVoiceInterview = function() {
   VE_warmupTTS();
 };
 
-/* ════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    GRANT MIC
-════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initVoiceModal() {
   var grantBtn = document.getElementById('vGrantMicBtn');
   if (grantBtn) {
@@ -1618,7 +1695,6 @@ function _initVoiceModal() {
         VE.active = true;
         await VE_beginSession();
       } catch(err) {
-        console.error('[VE] Mic error:', err);
         showToast('Microphone denied. Enable it in browser settings.', 'error');
       } finally {
         setLoading(grantBtn, false);
@@ -1642,7 +1718,7 @@ async function VE_initBargeIn(existingStream) {
     VE.analyser = VE.audioCtx.createAnalyser();
     VE.analyser.fftSize = 1024;
     source.connect(VE.analyser);
-  } catch(e) { console.warn('[VAD] Init failed:', e.message); }
+  } catch(e) {}
 }
 
 async function VE_beginSession() {
@@ -1665,7 +1741,7 @@ async function VE_beginSession() {
     if (opener.length > 250) {
       var trimmed = opener.substring(0, 250);
       var lastPunct = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
-      opener = lastPunct > 100 ? trimmed.substring(0, lastPunct+1) : trimmed + '…';
+      opener = lastPunct > 100 ? trimmed.substring(0, lastPunct+1) : trimmed + 'â€¦';
     }
 
     addAIMsg(opener, false);
@@ -1683,8 +1759,8 @@ async function VE_beginSession() {
 
 function VE_getOpener() {
   var openers = {
-    mixed:     "Hi! I'm Priya, your interview coach. We'll cover behavioral and technical questions. Let's start — tell me about yourself and the role you're preparing for.",
-    hr:        "Hi! I'm Priya. We're focusing on behavioral questions using the STAR method. Let's begin — tell me about a time you showed strong leadership under pressure.",
+    mixed:     "Hi! I'm Priya, your interview coach. We'll cover behavioral and technical questions. Let's start â€” tell me about yourself and the role you're preparing for.",
+    hr:        "Hi! I'm Priya. We're focusing on behavioral questions using the STAR method. Let's begin â€” tell me about a time you showed strong leadership under pressure.",
     technical: "Hi! I'm Priya. We're diving into technical questions today. First problem: given an array of integers, how would you find two numbers that sum to a target value?",
   };
   return openers[VE.mode] || openers.mixed;
@@ -1700,11 +1776,11 @@ function VE_typeSubmit() {
   VE_submitAnswer(txt);
 }
 
-/* ════════════════════
-   CLOSE MODAL — full teardown
-   BUG FIX: Mic tracks were not stopped → mic indicator stayed on.
-   BUG FIX: AudioContext not closed → memory leak.
-════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   CLOSE MODAL â€” full teardown
+   BUG FIX: Mic tracks were not stopped â†’ mic indicator stayed on.
+   BUG FIX: AudioContext not closed â†’ memory leak.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.closeVoiceModal = function() {
   // 1. Mark inactive first (stops callbacks from re-triggering)
   VE.active = false;
@@ -1753,12 +1829,12 @@ window.closeVoiceModal = function() {
   document.body.style.overflow = '';
 };
 
-/* ════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    19. SINGLE INIT POINT
-   BUG FIX: wireButtons() was called twice — once in DOMContentLoaded
+   BUG FIX: wireButtons() was called twice â€” once in DOMContentLoaded
    AND once in the immediate readyState check below, registering all
    event listeners twice. Now only one call path exists.
-════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _appInit() {
   // Prevent double-init
   if (_appInit._done) return;
@@ -1785,3 +1861,4 @@ if (document.readyState === 'loading') {
   // DOM already ready (VS Code Live Server quirk)
   _appInit();
 }
+
