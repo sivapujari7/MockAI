@@ -1173,16 +1173,17 @@ var VE = {
   analyser:       null,
   micStream:      null,
   vadRunning:     false,
+  bargeInitInFlight: false,
   loudFrames:     0,
   isMobile:       VE_isMobileDevice(),
   ttsStartedAt:   0,
   lastBargeAt:    0,
   BARGE_THRESHOLD: 1.4,
-  BARGE_MOBILE_THRESHOLD: 4.0,
+  BARGE_MOBILE_THRESHOLD: 2.8,
   BARGE_FRAMES:    10,
-  BARGE_MOBILE_FRAMES: 18,
+  BARGE_MOBILE_FRAMES: 8,
   BARGE_GRACE_MS: 900,
-  BARGE_MOBILE_GRACE_MS: 1800,
+  BARGE_MOBILE_GRACE_MS: 1200,
   BARGE_COOLDOWN_MS: 900,
   ttsRunId:        0,
   ttsHardTimer:    null,
@@ -1202,26 +1203,62 @@ function VE_voiceLangMatches(voice, lang) {
   return voiceLang === desired || voiceLang === base || voiceLang.indexOf(base + '-') === 0;
 }
 
-function VE_pickLocalVoice(lang) {
-  var localVoices = VE_getVoiceList().filter(function(voice) {
-    return voice && voice.localService === true && VE_voiceLangMatches(voice, lang);
+function VE_scoreVoice(voice, lang) {
+  if (!voice || !VE_voiceLangMatches(voice, lang)) return -Infinity;
+
+  var name = (voice.name || '').toLowerCase();
+  var uri = (voice.voiceURI || '').toLowerCase();
+  var voiceLang = (voice.lang || '').toLowerCase();
+  var desired = (lang || '').toLowerCase();
+  var base = desired.split('-')[0];
+  var haystack = name + ' ' + uri;
+  var score = 0;
+
+  if (voiceLang === desired) score += 35;
+  else if (voiceLang.indexOf(base + '-') === 0) score += 18;
+
+  if (/google.*(us|uk).*english|google.*english/.test(haystack)) score += 90;
+  if (/microsoft.*(aria|jenny|ava|emma|natural|neural|online)/.test(haystack)) score += 85;
+  if (/natural|neural|premium|enhanced|online/.test(haystack)) score += 40;
+  if (/samantha|karen|moira|zira|jenny|aria|ava|emma|allison|tessa|fiona|lekha|neerja/.test(haystack)) score += 35;
+  if (/female|woman/.test(haystack)) score += 15;
+  if (voice.default) score += 6;
+  if (voice.localService === false) score += 8;
+
+  if (/david|mark|fred|alex|daniel|george|\bmale\b|compact|espeak|robot|basic/.test(haystack)) score -= 35;
+
+  return score;
+}
+
+function VE_pickBestVoice(lang) {
+  var voices = VE_getVoiceList().filter(function(voice) {
+    return VE_voiceLangMatches(voice, lang);
   });
 
-  if (!localVoices.length) return null;
+  if (!voices.length) return null;
 
-  var preferredName = /female|woman|zira|aria|jenny|samantha|karen|ava|allison|moira|tessa|fiona|lekha|neerja/i;
-  return localVoices.find(function(voice) { return preferredName.test(voice.name || ''); }) || localVoices[0];
+  voices.sort(function(a, b) {
+    return VE_scoreVoice(b, lang) - VE_scoreVoice(a, lang);
+  });
+  return voices[0];
 }
 
 function VE_pickVoices() {
   if (!VE.synth) return;
-  VE.femaleVoiceEN = VE_pickLocalVoice('en-US');
-  VE.femaleVoiceTE = VE_pickLocalVoice('te-IN');
+  VE.femaleVoiceEN = VE_pickBestVoice('en-US') || VE_pickBestVoice('en-GB') || VE_pickBestVoice('en');
+  VE.femaleVoiceTE = VE_pickBestVoice('te-IN') || VE_pickBestVoice('te') || VE.femaleVoiceEN;
 }
 
 function VE_getVoiceForLang(lang) {
-  var voice = lang === 'te-IN' ? VE.femaleVoiceTE : VE.femaleVoiceEN;
-  return voice && voice.localService === true ? voice : null;
+  return lang === 'te-IN' ? VE.femaleVoiceTE : VE.femaleVoiceEN;
+}
+
+function VE_getVoiceProfile(lang) {
+  return {
+    rate: lang === 'te-IN' ? 0.9 : (VE.isMobile ? 0.93 : 0.95),
+    pitch: 1.0,
+    volume: 1.0,
+  };
 }
 
 function VE_getBargeThreshold() {
@@ -1254,6 +1291,7 @@ function VE_speak(rawText, onDone) {
     .replace(/\n+/g, ' ')
     .trim();
 
+  VE_pickVoices();
   var chunks = VE_splitText(text);
   if (!chunks.length) { if (onDone) onDone(); return; }
 
@@ -1263,9 +1301,9 @@ function VE_speak(rawText, onDone) {
 
   VE_setPhase('speaking');
   VE_showSpeechBox(rawText);
+  VE.ttsStartedAt = Date.now();
   VE_startBargeMonitor();
   VE_startSynthPinger();
-  VE.ttsStartedAt = Date.now();
 
   clearTimeout(VE.ttsHardTimer);
   VE.ttsHardTimer = setTimeout(function() {
@@ -1314,14 +1352,12 @@ function VE_speak(rawText, onDone) {
     var started = false;
     var startWatchdog = null;
 
+    var voiceProfile = VE_getVoiceProfile(lang);
     if (voice) utt.voice = voice;
     utt.lang = lang;
-    utt.rate = 1.0;
-    utt.volume = 1.0;
-    utt.pitch = /\?/.test(chunk) ? 1.18
-      : /great|excellent|good answer|well done/i.test(chunk) ? 1.22
-      : /algorithm|complexity|system design/i.test(chunk) ? 1.08
-      : 1.12;
+    utt.rate = voiceProfile.rate;
+    utt.volume = voiceProfile.volume;
+    utt.pitch = voiceProfile.pitch;
 
     function clearChunkTimers() {
       clearTimeout(startWatchdog);
@@ -1406,12 +1442,20 @@ function VE_synthStop() {
 }
 
 function VE_splitText(text) {
-  var raw = text.match(/[^.!?]+[.!?]*/g) || [text];
+  var clean = (text || '').replace(/\s+/g, ' ').trim();
+  var raw = clean.match(/[^.!?;:]+[.!?;:]*/g) || [clean];
   var out = [], buf = '';
+
   raw.forEach(function(s) {
-    if ((buf+s).length > 120 && buf) { out.push(buf.trim()); buf = s; }
-    else buf += s;
+    var next = (buf ? buf + ' ' : '') + s.trim();
+    if (next.length > 180 && buf) {
+      out.push(buf.trim());
+      buf = s.trim();
+    } else {
+      buf = next;
+    }
   });
+
   if (buf.trim()) out.push(buf.trim());
   return out.filter(Boolean);
 }
@@ -1419,8 +1463,53 @@ function VE_splitText(text) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    BARGE-IN VAD (RMS-based)
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+async function VE_prepareMobileBargeIn() {
+  if (VE.bargeInitInFlight || VE.analyser || !VE.active || VE.phase !== 'speaking') return;
+  VE.bargeInitInFlight = true;
+  var stream = null;
+
+  try {
+    stream = await VE_getMicStream();
+    if (!VE.active || VE.phase !== 'speaking') {
+      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
+      return;
+    }
+
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) {
+      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
+      return;
+    }
+
+    VE.micStream = stream;
+    stream = null;
+    VE.audioCtx = new AC();
+    if (VE.audioCtx.state === 'suspended') {
+      try { await VE.audioCtx.resume(); } catch(e) {}
+    }
+
+    var source = VE.audioCtx.createMediaStreamSource(VE.micStream);
+    VE.analyser = VE.audioCtx.createAnalyser();
+    VE.analyser.fftSize = 1024;
+    source.connect(VE.analyser);
+  } catch(e) {
+    if (stream) {
+      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(_) {}
+    }
+  } finally {
+    VE.bargeInitInFlight = false;
+  }
+
+  if (VE.analyser && VE.active && VE.phase === 'speaking') VE_startBargeMonitor();
+}
+
 function VE_startBargeMonitor() {
-  if (VE.vadRunning || !VE.analyser) return;
+  if (VE.vadRunning) return;
+  if (!VE.analyser) {
+    if (VE.isMobile && VE.active && VE.phase === 'speaking') VE_prepareMobileBargeIn();
+    return;
+  }
+
   VE.vadRunning = true;
   VE.loudFrames = 0;
 
@@ -1428,7 +1517,8 @@ function VE_startBargeMonitor() {
   var timeBuf = new Float32Array(bufLen);
 
   function frame() {
-    if (!VE.active) { requestAnimationFrame(frame); return; }
+    if (!VE.vadRunning || !VE.analyser) return;
+    if (!VE.active) { VE.vadRunning = false; return; }
 
     if (VE.phase === 'speaking') {
       VE.analyser.getFloatTimeDomainData(timeBuf);
@@ -1445,12 +1535,13 @@ function VE_startBargeMonitor() {
       } else if (rms > VE_getBargeThreshold()) {
         VE.loudFrames++;
       } else {
-        VE.loudFrames = Math.max(0, VE.loudFrames - 2); // decay
+        VE.loudFrames = Math.max(0, VE.loudFrames - 2);
       }
 
       if (VE.loudFrames >= VE_getBargeFrames()) {
         VE.loudFrames = 0;
         VE_handleBargeIn();
+        return;
       }
     } else {
       VE.loudFrames = 0;
@@ -1467,6 +1558,7 @@ function VE_handleBargeIn() {
   VE.lastBargeAt = now;
 
   VE_synthStop();
+  VE_releaseBargeMic();
 
   VE.finalText = '';
   VE.interimText = '';
@@ -1550,6 +1642,7 @@ function VE_releaseBargeMic() {
   VE.analyser = null;
   VE.micStream = null;
   VE.vadRunning = false;
+  VE.bargeInitInFlight = false;
   VE.loudFrames = 0;
 }
 
