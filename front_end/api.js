@@ -4,7 +4,7 @@
    ============================================================ */
 
 (function () {
- const LOCAL_API_BASE = 'http://localhost:10000/api';
+  const LOCAL_API_BASE = 'http://localhost:10000/api';
 
   function isLocalPage() {
     return ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
@@ -18,9 +18,15 @@
     const configuredBase = window.MOCKAI_API_BASE || localStorage.getItem('mockai_api_base');
 
     if (configuredBase) return normalizeApiBase(configuredBase);
+    
+    // Auto-detect same origin API base if served directly by the backend (e.g. localhost:10000)
+    if (isLocalPage() && window.location.port && !['5500', '3000', '5173', '5001', '8080'].includes(window.location.port)) {
+      return `${window.location.origin}/api`;
+    }
+    
     if (isLocalPage()) return LOCAL_API_BASE;
 
-   return `https://mockai-0b23.onrender.com/api`;
+    return `https://mockai-0b23.onrender.com/api`;
   }
 
   const API_BASE = getConfiguredApiBase();
@@ -63,7 +69,10 @@
     try {
       res = await fetch(`${API_BASE}${path}`, { ...options, headers });
     } catch {
-      throw new Error(`Cannot reach the backend at ${API_BASE}. Check your deployment URL or Vercel API route.`);
+      const guidance = API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1')
+        ? "Please make sure your local backend server is running. You can start it from your terminal by running 'npm run dev' or 'node back_end/server.js' inside your project root."
+        : "Please check your network connection, backend deployment URL, or Vercel API routing.";
+      throw new Error(`Cannot reach the backend at ${API_BASE}. ${guidance}`);
     }
 
     const text = await res.text();

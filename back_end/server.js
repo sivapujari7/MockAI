@@ -14,7 +14,16 @@ connectDB().catch((error) => {
 
 // AFTER — trust proxy must be set before ANY middleware
 const app = express();
-app.set('trust proxy', 1); // ✅ already correct position — just confirm it's BEFORE helmet
+app.set('trust proxy', 1);
+
+// Standardize Vercel Serverless / Vercel Dev request paths
+app.use((req, res, next) => {
+  if ((process.env.VERCEL || !require.main?.filename?.endsWith('server.js')) && !req.url.startsWith('/api')) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
 app.use(helmet({ contentSecurityPolicy: false }));
 
 const defaultClientUrls = [
@@ -71,20 +80,29 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
+app.use('/', limiter);
 
-app.get('/api', (req, res) => {
+app.use('/api/auth/login', authLimiter);
+app.use('/auth/login', authLimiter);
+
+app.use('/api/auth/register', authLimiter);
+app.use('/auth/register', authLimiter);
+
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/auth/forgot-password', authLimiter);
+
+const rootHandler = (req, res) => {
   res.json({
     success: true,
     message: 'MockAI Backend API is running!',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });
-});
+};
+app.get('/api', rootHandler);
+app.get('/', rootHandler);
 
-app.get('/api/health', (req, res) => {
+const healthHandler = (req, res) => {
   res.json({
     success: true,
     status: 'healthy',
@@ -92,15 +110,27 @@ app.get('/api/health', (req, res) => {
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
-});
+};
+app.get('/api/health', healthHandler);
+app.get('/health', healthHandler);
 
 app.use('/api/auth', require('./routes/auth'));
+app.use('/auth', require('./routes/auth'));
+
 app.use('/api/interviews', require('./routes/interviews'));
+app.use('/interviews', require('./routes/interviews'));
+
 app.use(
   "/api/resume",
   require("./routes/resume")
 );
+app.use(
+  "/resume",
+  require("./routes/resume")
+);
+
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/dashboard', require('./routes/dashboard'));
 
 const frontendDir = path.join(__dirname, '..', 'front_end');
 app.use(express.static(frontendDir));

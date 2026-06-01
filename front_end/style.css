@@ -892,20 +892,70 @@ footer{
 /* ════════════════════════════════════
    VOICE INTERVIEW MODAL
 ════════════════════════════════════ */
+/* ════════════════════════════════════
+   VOICE INTERVIEW MODAL REDESIGN
+   ==================================== */
 .voice-modal{
   position:fixed;inset:0;z-index:1000;
-  background:rgba(0,0,0,0.96);
-  backdrop-filter:blur(24px);
+  background:radial-gradient(circle at center, rgba(15, 23, 42, 0.88) 0%, rgba(8, 10, 24, 0.94) 100%);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
   display:none;align-items:center;justify-content:center;padding:20px;
 }
 .voice-modal.open{display:flex}
 .voice-modal-inner{
-  width:100%;max-width:500px;
-  height:95vh;display:flex;flex-direction:column;
+  width:100%;max-width:520px;
+  height:90vh;max-height:760px;
+  display:flex;flex-direction:column;
+  background:rgba(20, 20, 25, 0.7);
+  border:1px solid rgba(255, 255, 255, 0.08);
+  border-radius:24px;
+  box-shadow:0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  padding:32px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  position:relative;
+  overflow:hidden;
 }
 .voice-screen{
   display:flex;flex-direction:column;align-items:center;
   text-align:center;gap:16px;
+  height:100%;
+}
+
+/* Interruption/Barge-in Feedback Overlay */
+.vinterruption-feedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(185, 28, 28, 0.95));
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 99px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+  box-shadow: 0 12px 32px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+  animation: vint-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: opacity 0.3s ease;
+}
+@keyframes vint-pop {
+  from { transform: translate(-50%, -50%) scale(0.85); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+.vint-feedback-icon {
+  font-size: 16px;
+  animation: vint-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes vint-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.2); }
 }
 
 /* Permission screen */
@@ -947,7 +997,9 @@ footer{
 /* Interview screen */
 .vint-topbar{
   display:flex;align-items:center;justify-content:space-between;
-  width:100%;max-width:500px;padding:0 0 12px;flex-shrink:0;
+  width:100%;padding:0 0 12px;flex-shrink:0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
 }
 .vint-badge{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--emerald)}
 .vlang-indicator{
@@ -1023,21 +1075,25 @@ footer{
 
 .vai-speech-box{
   width:100%;max-width:460px;
-  background:var(--bg-3);border:1px solid var(--border);
-  border-radius:var(--r-md);padding:16px 20px;
+  background:rgba(255, 255, 255, 0.03);
+  border:1px solid rgba(255, 255, 255, 0.06);
+  border-radius:16px;
+  padding:16px 20px;
   min-height:68px;max-height:110px;overflow-y:auto;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
 }
-.vai-speech-text{font-size:14px;line-height:1.65;text-align:center;color:var(--text);overflow-wrap:break-word;word-break:break-word}
+.vai-speech-text{font-size:14px;line-height:1.65;text-align:center;color:#ffffff;overflow-wrap:break-word;word-break:break-word;font-weight:500}
 .vuser-transcript{
   width:100%;max-width:460px;min-height:44px;
-  background:var(--bg-3);border:1px solid var(--border);
-  border-radius:var(--r-md);padding:11px 15px;
-  font-size:13px;color:var(--muted);line-height:1.65;text-align:left;font-style:italic;
+  background:rgba(255, 255, 255, 0.02);
+  border:1px solid rgba(255, 255, 255, 0.04);
+  border-radius:16px;padding:11px 15px;
+  font-size:13px;color:rgba(255, 255, 255, 0.6);line-height:1.65;text-align:left;font-style:italic;
 }
 .vtype-row{display:flex;gap:8px;width:100%;max-width:460px}
 .vtype-input{
-  flex:1;background:var(--bg-3);border:1px solid var(--border);
+  flex:1;background:rgba(255, 255, 255, 0.03);
+  border:1px solid rgba(255, 255, 255, 0.06);
   border-radius:var(--r-sm);padding:9px 13px;color:var(--text);
   font-size:13px;font-family:inherit;outline:none;
   transition:border-color var(--t);
@@ -1046,17 +1102,19 @@ footer{
 .vtype-input::placeholder{color:var(--dim)}
 
 .vscores-bar{
-  position:fixed;bottom:0;left:0;right:0;
-  background:rgba(10,10,10,0.96);
-  border-top:1px solid var(--border);
-  display:flex;align-items:center;justify-content:center;
-  padding:12px 32px;gap:0;z-index:10;flex-shrink:0;
+  margin-top:auto;
+  background:rgba(255, 255, 255, 0.03);
+  border:1px solid rgba(255, 255, 255, 0.06);
+  border-radius:16px;
+  display:flex;align-items:center;justify-content:space-around;
+  padding:12px;gap:0;z-index:10;flex-shrink:0;
+  width:100%;max-width:460px;
 }
-.vscore-item{text-align:center;padding:0 24px}
-.vsi-label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px}
+.vscore-item{text-align:center;flex:1}
+.vsi-label{font-size:9px;color:rgba(255, 255, 255, 0.4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px}
 .vsi-val{font-size:20px;font-weight:900;letter-spacing:-0.04em;transition:color 0.4s}
-.vscore-divider{width:1px;height:28px;background:var(--border)}
-#vScreenInterview{display:flex;flex-direction:column;height:100%;overflow:hidden}
+.vscore-divider{width:1px;height:28px;background:rgba(255, 255, 255, 0.08)}
+#vScreenInterview{display:flex;flex-direction:column;height:100%;overflow:hidden;align-items:center;gap:12px}
 
 /* ════════════════════════════════════
    RESPONSIVE
