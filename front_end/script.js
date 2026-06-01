@@ -1159,6 +1159,7 @@ var VE = {
   isStarting:   false,
   finalText:    '',
   interimText:  '',
+  listenRunId:  0,
   detectedLang: 'en-US',
   userLanguage: 'english',
   femaleVoiceEN: null,
@@ -1493,35 +1494,62 @@ function VE_destroyRec() {
   VE.rec = null;
 }
 
+function VE_getHeardText() {
+  var finalText = (VE.finalText || '').trim();
+  var interimText = (VE.interimText || '').trim();
+
+  if (finalText && interimText && interimText.toLowerCase().indexOf(finalText.toLowerCase()) !== 0) {
+    return (finalText + ' ' + interimText).trim();
+  }
+
+  return finalText || interimText;
+}
+
+function VE_restartListen(delay) {
+  if (!VE.active || VE.phase !== 'listening') return;
+  setTimeout(function() {
+    if (VE.active && VE.phase === 'listening') VE_doListen();
+  }, delay);
+}
+
 function VE_createRecognition() {
   VE_destroyRec();
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
 
+  var listenRunId = VE.listenRunId;
   var rec = new SR();
-  rec.continuous      = false; // single-utterance = reliable finals in Chrome
+  rec.continuous      = false;
   rec.interimResults  = true;  // prevents Chrome silently dropping finals
   rec.maxAlternatives = 1;
   rec.lang            = VE.detectedLang;
 
   rec.onstart = function() {
+    if (listenRunId !== VE.listenRunId) return;
     VE.isStarting = false;
   };
 
   rec.onresult = function(e) {
-    VE.interimText = '';
-    for (var i = e.resultIndex; i < e.results.length; i++) {
-      var t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        VE.finalText += (VE.finalText ? ' ' : '') + t.trim();
-      } else {
-        VE.interimText = t;
-      }
-    }
-    VE_showTranscript(VE.finalText || VE.interimText);
+    if (listenRunId !== VE.listenRunId || VE.phase !== 'listening') return;
 
-    if (VE.finalText) {
-      var lang = VE_detectLang(VE.finalText);
+    var finalParts = [];
+    var interimParts = [];
+
+    for (var i = 0; i < e.results.length; i++) {
+      var t = (e.results[i][0].transcript || '').trim();
+      if (!t) continue;
+      if (e.results[i].isFinal) finalParts.push(t);
+      else interimParts.push(t);
+    }
+
+    VE.finalText = finalParts.join(' ').trim();
+    VE.interimText = interimParts.join(' ').trim();
+
+    var heard = VE_getHeardText();
+    VE_showTranscript(heard);
+
+    if (heard) {
+      var lang = VE_detectLang(heard);
       if (lang && lang !== VE.detectedLang) {
         VE.detectedLang  = lang;
         VE.userLanguage  = lang === 'te-IN' ? 'telugu' : 'english';
@@ -1530,39 +1558,44 @@ function VE_createRecognition() {
     }
 
     clearTimeout(VE.silenceTimer);
-    if (VE.finalText.trim()) {
+    if (heard) {
       VE.silenceTimer = setTimeout(function() {
-        if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
-          VE_stopListening();
-          VE_submitAnswer(VE.finalText.trim());
+        var bestText = VE_getHeardText();
+        if (listenRunId === VE.listenRunId && VE.phase === 'listening' && bestText && VE.active) {
+          VE_submitAnswer(bestText);
         }
-      }, VE.silenceDelay);
+      }, VE.isMobile ? Math.max(1300, VE.silenceDelay) : VE.silenceDelay);
     }
   };
 
   rec.onerror = function(e) {
+    if (listenRunId !== VE.listenRunId) return;
     VE.isStarting = false;
     if (e.error === 'aborted') return;
     if (e.error === 'no-speech') {
-      if (VE.phase === 'listening' && VE.active) setTimeout(function(){ VE_doListen(); }, 200);
+      var noSpeechText = VE_getHeardText();
+      if (noSpeechText) VE_submitAnswer(noSpeechText);
+      else VE_restartListen(VE.isMobile ? 650 : 250);
       return;
     }
     if (e.error === 'not-allowed') { showToast('Microphone permission denied.', 'error'); return; }
     if (VE.phase === 'listening' && VE.active) {
       VE_setStatus('Reconnecting...');
-      setTimeout(function(){ VE_doListen(); }, 600);
+      VE_restartListen(VE.isMobile ? 900 : 600);
     }
   };
 
   rec.onend = function() {
+    if (listenRunId !== VE.listenRunId) return;
     VE.isStarting = false;
-    if (VE.phase === 'listening' && VE.finalText.trim() && VE.active) {
+    var heard = VE_getHeardText();
+    if (VE.phase === 'listening' && heard && VE.active) {
       clearTimeout(VE.silenceTimer);
-      VE_submitAnswer(VE.finalText.trim());
+      VE_submitAnswer(heard);
       return;
     }
     if (VE.phase === 'listening' && VE.active) {
-      setTimeout(function(){ VE_doListen(); }, 150);
+      VE_restartListen(VE.isMobile ? 650 : 200);
     }
   };
 
@@ -1572,6 +1605,7 @@ function VE_createRecognition() {
 function VE_doListen() {
   if (!VE.active || VE.isStarting || VE.phase === 'processing') return;
   VE.isStarting  = true;
+  VE.listenRunId++;
   VE.finalText   = '';
   VE.interimText = '';
   clearTimeout(VE.silenceTimer);
@@ -1592,15 +1626,16 @@ function VE_doListen() {
     VE.rec.start();
   } catch(e) {
     VE.isStarting = false;
-    setTimeout(function(){ VE_doListen(); }, 400);
+    VE_restartListen(VE.isMobile ? 700 : 400);
   }
 }
 
 function VE_stopListening() {
   clearTimeout(VE.silenceTimer);
   VE.isStarting = false;
-  try { if (VE.rec) VE.rec.stop(); } catch(e) {}
-  try { if (VE.rec) VE.rec.abort(); } catch(e) {}
+  try { if (VE.rec) VE.rec.stop(); } catch(e) {
+    try { if (VE.rec) VE.rec.abort(); } catch(_) {}
+  }
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1671,11 +1706,10 @@ function VE_showTranscript(text) {
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function VE_submitAnswer(text) {
   if (!text || !text.trim() || VE.phase === 'processing') return;
-  var words = text.trim().split(/\s+/).length;
-  if (words < 2) { VE_doListen(); return; }
+  if (text.trim().length < 2) { VE_doListen(); return; }
 
-  VE_stopListening();
   VE_setPhase('processing');
+  VE_stopListening();
   VE_setStatus(VE_STATUS.processing);
   VE_showTranscript('"' + text + '"');
   addAIMsg(text, true);
@@ -1878,6 +1912,7 @@ window.closeVoiceModal = function() {
   VE.sessionId    = null;
   VE.finalText    = '';
   VE.interimText  = '';
+  VE.listenRunId++;
   VE.detectedLang = 'en-US';
   VE.userLanguage = 'english';
   VE.phase        = 'idle';
