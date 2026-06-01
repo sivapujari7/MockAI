@@ -1,201 +1,261 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MockAI – Ace Every Interview with AI</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;500;600;700&family=Cabinet+Grotesk:wght@300;400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MockAI – Ace Every Interview with AI</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
+<!-- ═══════════════════════════════════════════
+     BACKGROUND CANVAS (Three.js particle field)
+═══════════════════════════════════════════ -->
 <canvas id="bg-canvas"></canvas>
-<div class="grain"></div>
 
-
-<!-- LOADER -->
+<!-- ═══════════════════════════════════════════
+     LOADER
+═══════════════════════════════════════════ -->
 <div id="loader">
   <div class="loader-inner">
-    <svg class="loader-logo-svg" viewBox="0 0 60 60"><circle cx="30" cy="30" r="28" fill="none" stroke="url(#lg)" stroke-width="2"/><defs><linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><text x="50%" y="54%" text-anchor="middle" font-size="18" font-family="Syne" font-weight="800" fill="url(#lg)">M</text></svg>
-    <div class="loader-text">MockAI</div>
-    <div class="loader-bar-wrap"><div class="loader-bar"></div></div>
-    <div class="loader-sub">Initializing AI Engine...</div>
+    <div class="loader-logo">
+      <svg viewBox="0 0 48 48" width="48" height="48">
+        <defs>
+          <linearGradient id="lg-logo" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1"/>
+            <stop offset="100%" stop-color="#06b6d4"/>
+          </linearGradient>
+        </defs>
+        <circle cx="24" cy="24" r="22" fill="none" stroke="url(#lg-logo)" stroke-width="2" stroke-dasharray="138" stroke-dashoffset="138">
+          <animate attributeName="stroke-dashoffset" from="138" to="0" dur="1.2s" fill="freeze" />
+        </circle>
+        <text x="50%" y="56%" text-anchor="middle" font-size="16" font-family="Space Grotesk" font-weight="700" fill="url(#lg-logo)">M</text>
+      </svg>
+    </div>
+    <div class="loader-wordmark">Mock<span>AI</span></div>
+    <div class="loader-track"><div class="loader-fill"></div></div>
+    <div class="loader-status">Initializing AI Engine…</div>
   </div>
 </div>
 
-<!-- NAV -->
+<!-- ═══════════════════════════════════════════
+     NAVIGATION
+═══════════════════════════════════════════ -->
 <nav id="nav">
   <div class="nav-inner">
     <a href="#" class="logo">
-      <div class="logo-mark">
-        <svg viewBox="0 0 32 32" width="32" height="32"><circle cx="16" cy="16" r="15" fill="none" stroke="url(#nl)" stroke-width="1.5"/><defs><linearGradient id="nl" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><text x="50%" y="56%" text-anchor="middle" font-size="13" font-family="Syne" font-weight="800" fill="url(#nl)">M</text></svg>
-      </div>
-      <span>Mock<em>AI</em></span>
+      <svg viewBox="0 0 32 32" width="28" height="28">
+        <defs><linearGradient id="nl" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs>
+        <circle cx="16" cy="16" r="14" fill="none" stroke="url(#nl)" stroke-width="1.5"/>
+        <text x="50%" y="57%" text-anchor="middle" font-size="12" font-family="Space Grotesk" font-weight="700" fill="url(#nl)">M</text>
+      </svg>
+      Mock<em>AI</em>
     </a>
+
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#how">How It Works</a>
       <a href="#ai-panel">Try AI</a>
       <a href="#dashboard">Dashboard</a>
     </div>
+
     <div class="nav-actions">
       <button class="btn-ghost" id="navSignIn">Sign In</button>
-      <button class="btn-primary-sm" id="navGetStarted">Get Started</button>
+      <button class="btn-primary-sm" id="navGetStarted">Get Started Free</button>
     </div>
-    <button class="hamburger" id="hamburger"><span></span><span></span><span></span></button>
+
+    <button class="hamburger" id="hamburger" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </nav>
 
-<!-- MOBILE MENU -->
-<div class="mobile-menu" id="mobileMenu">
-  <button class="mobile-close" id="mobileClose">✕</button>
+<!-- Mobile Menu -->
+<div class="mobile-menu" id="mobileMenu" role="dialog" aria-modal="true">
+  <button class="mobile-close" id="mobileClose" aria-label="Close menu">✕</button>
   <a href="#features" class="mm-link">Features</a>
   <a href="#how" class="mm-link">How It Works</a>
   <a href="#ai-panel" class="mm-link">Try AI</a>
   <a href="#dashboard" class="mm-link">Dashboard</a>
-  <button class="btn-primary-sm" style="width:100%;margin-top:16px" id="mobileGetStarted">Get Started Free</button>
+  <button class="btn-primary-sm mm-cta" id="mobileGetStarted">Get Started Free</button>
 </div>
 
-<!-- HERO -->
+<!-- ═══════════════════════════════════════════
+     HERO
+═══════════════════════════════════════════ -->
 <section id="hero">
+  <div class="hero-bg-grid"></div>
+
   <div class="hero-content">
     <div class="hero-badge reveal">
-      <span class="badge-dot"></span>
+      <span class="badge-pulse"></span>
       AI-Powered · Real-Time · Personalized
     </div>
+
     <h1 class="hero-h1 reveal">
       Land Your<br>
-      <span class="shimmer-text">Dream Job</span><br>
+      <span class="gradient-text">Dream Job</span><br>
       with AI
     </h1>
-    <p class="hero-p reveal">The most advanced interview simulation platform. Practice with AI, get instant feedback, track your growth — all in one place.</p>
+
+    <p class="hero-p reveal">
+      The most advanced interview simulation platform. Practice with AI, get instant feedback, and track your growth — all in one place.
+    </p>
+
     <div class="hero-btns reveal">
-      <button class="btn-glow" id="heroStart">Start Free Interview →</button>
-      <button class="btn-ghost-lg" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">See How It Works</button>
+      <button class="btn-hero-primary" id="heroStart">
+        <span>Start Free Interview</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+      <button class="btn-hero-ghost" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+        See How It Works
+      </button>
     </div>
-    <div class="hero-trust reveal">
-      <div class="trust-avatars">
-        <div class="ta" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">AK</div>
-        <div class="ta" style="background:linear-gradient(135deg,#06b6d4,#0ea5e9)">PR</div>
-        <div class="ta" style="background:linear-gradient(135deg,#10b981,#059669)">VS</div>
-        <div class="ta" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">NM</div>
+
+    <div class="hero-social-proof reveal">
+      <div class="sp-avatars">
+        <div class="sp-av" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">AK</div>
+        <div class="sp-av" style="background:linear-gradient(135deg,#06b6d4,#0ea5e9)">PR</div>
+        <div class="sp-av" style="background:linear-gradient(135deg,#10b981,#059669)">VS</div>
+        <div class="sp-av" style="background:linear-gradient(135deg,#f59e0b,#ef4444)">NM</div>
       </div>
-      <div class="trust-text">
-        <span id="heroUserCount">—</span> users practicing right now
-        <div class="trust-sub">Join and start your first mock interview today</div>
+      <div class="sp-text">
+        <strong id="heroUserCount">1,247</strong> users practicing right now
+        <div class="sp-sub">Join and start your first mock interview today</div>
       </div>
     </div>
   </div>
+
+  <!-- Hero visual card -->
   <div class="hero-visual">
     <div class="hv-card glass-card reveal-right">
       <div class="hv-header">
         <div class="hv-ai-ava">🤖</div>
-        <div>
+        <div class="hv-info">
           <div class="hv-name">Alex — AI Interviewer</div>
           <div class="hv-role">Senior SWE Specialist</div>
         </div>
         <div class="live-badge"><span class="live-dot"></span>Live</div>
       </div>
+
       <div class="hv-msgs" id="heroMsgs">
         <div class="hv-msg ai">Tell me about a complex technical problem you solved under pressure.</div>
         <div class="hv-msg user">During my internship, our production server crashed before a major demo. I diagnosed a memory leak in Node.js and deployed a hotfix in under 2 hours.</div>
         <div class="hv-msg ai typing-msg"><span class="dot-typing"><span></span><span></span><span></span></span></div>
       </div>
+
       <div class="hv-scores">
-        <div class="hv-score-item">
-          <div class="hv-score-label">Confidence</div>
+        <div class="hv-score-row">
+          <span class="hv-score-label">Confidence</span>
           <div class="hv-score-bar"><div class="hv-score-fill" style="width:87%;background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div></div>
-          <div class="hv-score-val">87%</div>
+          <span class="hv-score-val">87%</span>
         </div>
-        <div class="hv-score-item">
-          <div class="hv-score-label">Clarity</div>
+        <div class="hv-score-row">
+          <span class="hv-score-label">Clarity</span>
           <div class="hv-score-bar"><div class="hv-score-fill" style="width:92%;background:linear-gradient(90deg,#06b6d4,#0ea5e9)"></div></div>
-          <div class="hv-score-val">92%</div>
+          <span class="hv-score-val">92%</span>
         </div>
-        <div class="hv-score-item">
-          <div class="hv-score-label">Technical</div>
+        <div class="hv-score-row">
+          <span class="hv-score-label">Technical</span>
           <div class="hv-score-bar"><div class="hv-score-fill" style="width:79%;background:linear-gradient(90deg,#10b981,#059669)"></div></div>
-          <div class="hv-score-val">79%</div>
+          <span class="hv-score-val">79%</span>
         </div>
       </div>
     </div>
-    <div class="hv-float f1 glass-card">
-      <div class="f-icon">🎯</div>
-      <div><div class="f-title">ATS Score</div><div class="f-val">94%</div></div>
+
+    <!-- Floating stat chips -->
+    <div class="hv-chip chip-1 glass-card">
+      <span class="chip-icon">🎯</span>
+      <div><div class="chip-label">ATS Score</div><div class="chip-val">94%</div></div>
     </div>
-    <div class="hv-float f2 glass-card">
-      <div class="f-icon">📈</div>
-      <div><div class="f-title">Avg Improvement</div><div class="f-val">+31%</div></div>
+    <div class="hv-chip chip-2 glass-card">
+      <span class="chip-icon">📈</span>
+      <div><div class="chip-label">Avg Improvement</div><div class="chip-val">+31%</div></div>
     </div>
-    <div class="hv-float f3 glass-card">
-      <div class="f-icon">✅</div>
-      <div><div class="f-title">Sessions Today</div><div class="f-val" id="sessionsToday">—</div></div>
+    <div class="hv-chip chip-3 glass-card">
+      <span class="chip-icon">✅</span>
+      <div><div class="chip-label">Sessions Today</div><div class="chip-val" id="sessionsToday">94</div></div>
     </div>
   </div>
 </section>
 
-<!-- FEATURES / CAPABILITIES -->
+<!-- ═══════════════════════════════════════════
+     FEATURES
+═══════════════════════════════════════════ -->
 <section id="features">
   <div class="container">
-    <div class="section-tag reveal">Capabilities</div>
-    <h2 class="section-h2 reveal">Everything You Need to<br><span class="shimmer-text">Land the Role</span></h2>
-    <p class="section-p reveal">A complete AI-powered interview ecosystem — from resume to offer letter.</p>
+    <div class="section-eyebrow reveal">Capabilities</div>
+    <h2 class="section-title reveal">Everything You Need to<br><span class="gradient-text">Land the Role</span></h2>
+    <p class="section-sub reveal">A complete AI-powered interview ecosystem — from resume to offer letter.</p>
+
     <div class="features-grid">
       <div class="feat-card glass-card reveal" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'});setAIMode('hr')">
-        <div class="feat-glow" style="--gc:#6366f1"></div>
-        <div class="feat-icon" style="background:rgba(99,102,241,0.15);border-color:rgba(99,102,241,0.3)">👔</div>
+        <div class="feat-glow" style="--gc:rgba(99,102,241,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(99,102,241,0.12);border-color:rgba(99,102,241,0.25)">👔</div>
         <h3>HR Interview AI</h3>
         <p>Practice behavioral questions with the STAR method. AI coaches your storytelling, tone, and structure in real-time.</p>
-        <div class="feat-cta">Try now →</div>
+        <div class="feat-arrow">Try now <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
-      <div class="feat-card glass-card reveal" style="transition-delay:.08s" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'});setAIMode('technical')">
-        <div class="feat-glow" style="--gc:#06b6d4"></div>
-        <div class="feat-icon" style="background:rgba(6,182,212,0.15);border-color:rgba(6,182,212,0.3)">💻</div>
+
+      <div class="feat-card glass-card reveal" style="transition-delay:.07s" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'});setAIMode('technical')">
+        <div class="feat-glow" style="--gc:rgba(6,182,212,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(6,182,212,0.12);border-color:rgba(6,182,212,0.25)">💻</div>
         <h3>Technical Simulator</h3>
         <p>Solve DSA problems with a live code editor. AI evaluates your logic, time complexity, and approach instantly.</p>
-        <div class="feat-cta">Try now →</div>
+        <div class="feat-arrow">Try now <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
-      <div class="feat-card glass-card reveal" style="transition-delay:.16s" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
-        <div class="feat-glow" style="--gc:#10b981"></div>
-        <div class="feat-icon" style="background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3)">📄</div>
+
+      <div class="feat-card glass-card reveal" style="transition-delay:.14s" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+        <div class="feat-glow" style="--gc:rgba(16,185,129,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.25)">📄</div>
         <h3>Resume Analysis</h3>
         <p>Upload your resume and get ATS scores, missing keywords, and improvement recommendations powered by AI.</p>
-        <div class="feat-cta">Analyze resume →</div>
+        <div class="feat-arrow">Analyze resume <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
+
       <div class="feat-card glass-card reveal" style="transition-delay:.04s" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'});setAIMode('mixed')">
-        <div class="feat-glow" style="--gc:#f59e0b"></div>
-        <div class="feat-icon" style="background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.3)">🤖</div>
+        <div class="feat-glow" style="--gc:rgba(245,158,11,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25)">🤖</div>
         <h3>Full Mock Interview</h3>
         <p>End-to-end simulation with mixed technical and HR questions. Confidence scoring, tips, and performance report.</p>
-        <div class="feat-cta">Start now →</div>
+        <div class="feat-arrow">Start now <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
-      <div class="feat-card glass-card reveal" style="transition-delay:.12s">
-        <div class="feat-glow" style="--gc:#8b5cf6"></div>
-        <div class="feat-icon" style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.3)">⚡</div>
+
+      <div class="feat-card glass-card reveal" style="transition-delay:.11s">
+        <div class="feat-glow" style="--gc:rgba(139,92,246,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(139,92,246,0.12);border-color:rgba(139,92,246,0.25)">⚡</div>
         <h3>Real-Time Feedback</h3>
         <p>Every answer scored on confidence, communication and technical accuracy — mid-interview, not after.</p>
-        <div class="feat-cta">See demo →</div>
+        <div class="feat-arrow">See demo <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
-      <div class="feat-card glass-card reveal" style="transition-delay:.2s" onclick="document.getElementById('dashboard').scrollIntoView({behavior:'smooth'})">
-        <div class="feat-glow" style="--gc:#ef4444"></div>
-        <div class="feat-icon" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.3)">📊</div>
+
+      <div class="feat-card glass-card reveal" style="transition-delay:.18s" onclick="document.getElementById('dashboard').scrollIntoView({behavior:'smooth'})">
+        <div class="feat-glow" style="--gc:rgba(239,68,68,0.4)"></div>
+        <div class="feat-icon" style="background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.25)">📊</div>
         <h3>Performance Dashboard</h3>
         <p>Track every session. Skill breakdown, score trends, and AI coaching recommendations in one place.</p>
-        <div class="feat-cta">View dashboard →</div>
+        <div class="feat-arrow">View dashboard <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- HOW IT WORKS + RESUME -->
+<!-- ═══════════════════════════════════════════
+     HOW IT WORKS + RESUME ANALYSER
+═══════════════════════════════════════════ -->
 <section id="how">
   <div class="container">
-    <div class="section-tag reveal">Process</div>
-    <h2 class="section-h2 reveal">From Upload to<br><span class="shimmer-text">Offer Letter</span></h2>
+    <div class="section-eyebrow reveal">Process</div>
+    <h2 class="section-title reveal">From Upload to<br><span class="gradient-text">Offer Letter</span></h2>
+
     <div class="how-grid">
+      <!-- Steps -->
       <div class="how-steps">
         <div class="how-step reveal">
           <div class="step-num">01</div>
@@ -226,8 +286,11 @@
           </div>
         </div>
       </div>
+
+      <!-- Resume Analyser Panel -->
       <div class="how-resume-panel glass-card reveal-right">
         <div class="hrp-title">📄 Resume Analyzer</div>
+
         <div class="role-chips">
           <div class="role-chip active" data-role="Software Engineer">Software Engineer</div>
           <div class="role-chip" data-role="Data Scientist">Data Scientist</div>
@@ -235,13 +298,15 @@
           <div class="role-chip" data-role="DevOps">DevOps</div>
           <div class="role-chip" data-role="UI/UX Designer">UI/UX Designer</div>
         </div>
+
         <div class="resume-drop" id="resumeDrop">
           <div class="drop-icon">📁</div>
           <div class="drop-text">Drop PDF, DOCX or TXT here</div>
           <div class="drop-sub">or click to browse</div>
-          <input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+          <input type="file" id="resumeFile" accept=".pdf,.doc,.docx,.txt" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
           <div id="resumeFileName" class="file-name-display"></div>
         </div>
+
         <button class="btn-analyze" id="uploadResumeBtn">✨ Analyze with AI</button>
         <div id="resumeResult"></div>
       </div>
@@ -249,13 +314,16 @@
   </div>
 </section>
 
-<!-- AI PANEL -->
+<!-- ═══════════════════════════════════════════
+     AI INTERVIEW PANEL
+═══════════════════════════════════════════ -->
 <section id="ai-panel">
   <div class="container">
-    <div class="section-tag reveal">Interactive AI</div>
-    <h2 class="section-h2 reveal">Practice Right Now —<br><span class="shimmer-text">No Setup Needed</span></h2>
+    <div class="section-eyebrow reveal">Interactive AI</div>
+    <h2 class="section-title reveal">Practice Right Now —<br><span class="gradient-text">No Setup Needed</span></h2>
+
     <div class="ai-panel-wrap reveal">
-      <!-- Mode Selector -->
+      <!-- Mode selector tabs -->
       <div class="ai-mode-bar">
         <button class="ai-mode-btn active" data-mode="mixed" onclick="setAIMode('mixed')">
           <span>🤖</span> Full Interview
@@ -272,7 +340,7 @@
       </div>
 
       <div class="ai-panel-body">
-        <!-- Chat Side -->
+        <!-- Chat side -->
         <div class="ai-chat-side">
           <div class="ai-chat-header">
             <div class="ai-ava-wrap">
@@ -285,12 +353,14 @@
             </div>
             <div class="live-badge" style="margin-left:auto"><span class="live-dot"></span>Live</div>
           </div>
+
           <div class="ai-messages" id="aiMessages">
             <div class="ai-msg-bubble ai-bubble">
               Hello! I'm Alex, your AI interviewer. Select your interview mode above and type your first answer below — or just say "Ready" to begin!
             </div>
           </div>
-          <!-- Technical mode: code editor -->
+
+          <!-- Code editor (technical mode only) -->
           <div class="tech-editor-wrap" id="techEditorWrap" style="display:none">
             <div class="editor-header">
               <span class="editor-lang">javascript</span>
@@ -298,12 +368,14 @@
             </div>
             <textarea class="code-editor" id="codeEditor" placeholder="// Write your code solution here&#10;function solution(input) {&#10;  // your approach&#10;}"></textarea>
           </div>
+
           <div class="ai-input-row">
             <textarea class="ai-input" id="aiInput" placeholder="Type your answer… (Enter to send, Shift+Enter for new line)" rows="2"></textarea>
-            <button class="ai-send-btn" id="aiSend">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <button class="ai-send-btn" id="aiSend" aria-label="Send message">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </div>
+
           <div class="ai-quick-chips" id="quickChips">
             <div class="quick-chip" onclick="loadQuick(this)" data-q="Tell me about yourself.">Tell me about yourself</div>
             <div class="quick-chip" onclick="loadQuick(this)" data-q="What is your greatest strength?">Greatest strength</div>
@@ -312,9 +384,9 @@
           </div>
         </div>
 
-        <!-- Feedback Side -->
+        <!-- Feedback side -->
         <div class="ai-feedback-side">
-          <div class="feedback-card glass-card">
+          <div class="feedback-card">
             <div class="fc-title">⚡ Live Scores</div>
             <div class="score-row-item">
               <div class="sri-label">Confidence</div>
@@ -332,13 +404,15 @@
               <div class="sri-val" id="fTechVal">—</div>
             </div>
           </div>
-          <div class="feedback-card glass-card" id="tipsCard">
+
+          <div class="feedback-card" id="tipsCard">
             <div class="fc-title">💡 AI Tips</div>
             <div class="tips-list" id="tipsList">
               <div class="tip-item">Answer your first question to get personalized tips.</div>
             </div>
           </div>
-          <div class="feedback-card glass-card">
+
+          <div class="feedback-card">
             <div class="fc-title">🎯 Try These</div>
             <div class="try-chips">
               <div class="try-chip" onclick="setAIMode('hr');document.getElementById('aiInput').value='Tell me about a time you showed leadership.';document.getElementById('aiInput').focus()">HR: Leadership story</div>
@@ -353,14 +427,17 @@
   </div>
 </section>
 
-<!-- DASHBOARD -->
+<!-- ═══════════════════════════════════════════
+     DASHBOARD
+═══════════════════════════════════════════ -->
 <section id="dashboard">
   <div class="container">
-    <div class="section-tag reveal">Dashboard</div>
-    <h2 class="section-h2 reveal">Your <span class="shimmer-text">Command Center</span></h2>
-    <p class="section-p reveal">Sign in to unlock your real data — sessions, scores, and AI coaching.</p>
+    <div class="section-eyebrow reveal">Dashboard</div>
+    <h2 class="section-title reveal">Your <span class="gradient-text">Command Center</span></h2>
+    <p class="section-sub reveal">Sign in to unlock your real data — sessions, scores, and AI coaching.</p>
+
     <div class="dash-shell glass-card reveal">
-      <!-- Topbar -->
+      <!-- Top bar -->
       <div class="dash-topbar">
         <div class="dash-brand">Mock<em>AI</em></div>
         <div class="dash-tabs">
@@ -376,6 +453,7 @@
           </div>
         </div>
       </div>
+
       <!-- Body -->
       <div class="dash-body">
         <!-- Sidebar -->
@@ -388,9 +466,11 @@
           <div class="ds-item" data-section="coach"><span>🤖</span>AI Coach</div>
           <div class="ds-item" data-section="settings"><span>⚙️</span>Settings</div>
         </div>
-        <!-- Main -->
+
+        <!-- Main panels -->
         <div class="dash-main" id="dashMain">
-          <!-- Overview panel (default) -->
+
+          <!-- Overview panel -->
           <div class="dash-panel active" id="panel-overview">
             <div class="dash-stats-grid">
               <div class="ds-card">
@@ -414,15 +494,21 @@
                 <div class="ds-card-change">days active</div>
               </div>
             </div>
+
             <div class="dash-charts-row">
               <div class="dash-chart-card">
                 <div class="dcc-title">Score Trend</div>
                 <div class="mini-chart" id="miniChart">
-                  <div class="mc-bar" style="height:10%"></div><div class="mc-bar" style="height:10%"></div>
-                  <div class="mc-bar" style="height:10%"></div><div class="mc-bar" style="height:10%"></div>
-                  <div class="mc-bar" style="height:10%"></div><div class="mc-bar" style="height:10%"></div>
-                  <div class="mc-bar" style="height:10%"></div><div class="mc-bar" style="height:10%"></div>
-                  <div class="mc-bar" style="height:10%"></div><div class="mc-bar accent" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar" style="height:10%"></div>
+                  <div class="mc-bar accent" style="height:10%"></div>
                 </div>
                 <div class="mc-empty" id="mcEmpty">Sign in to see your score trend</div>
               </div>
@@ -447,8 +533,12 @@
                 </div>
               </div>
             </div>
+
             <div class="dash-history-card">
-              <div class="dhc-title">Recent Sessions <span id="viewAllSessions" style="font-size:12px;color:#6366f1;cursor:pointer;font-weight:400;float:right" onclick="switchDashTab('sessions')">View all →</span></div>
+              <div class="dhc-title">
+                Recent Sessions
+                <span id="viewAllSessions" onclick="switchDashTab('sessions')">View all →</span>
+              </div>
               <table class="history-table">
                 <thead><tr><th>Role</th><th>Company</th><th>Type</th><th>Score</th><th>Date</th></tr></thead>
                 <tbody id="historyTbody">
@@ -456,6 +546,7 @@
                 </tbody>
               </table>
             </div>
+
             <div id="recsPanel" style="display:none" class="dash-chart-card">
               <div class="dcc-title">🤖 AI Recommendations</div>
               <ul class="recs-list" id="recsList"></ul>
@@ -483,11 +574,11 @@
             <div class="panel-header"><div class="ph-title">Resume Analysis</div></div>
             <div class="resume-panel-body">
               <div class="rpb-upload-area">
-                <div class="rpu-title">Upload & Analyze Your Resume</div>
+                <div class="rpu-title">Upload &amp; Analyze Your Resume</div>
                 <div class="resume-drop small" id="dashResumeDrop">
                   <div class="drop-icon">📁</div>
                   <div class="drop-text">Drop or click to upload</div>
-                  <input type="file" id="dashResumeFile" accept=".pdf,.doc,.docx,.txt" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+                  <input type="file" id="dashResumeFile" accept=".pdf,.doc,.docx,.txt" style="position:absolute;inset:0;opacity:0;cursor:pointer" />
                 </div>
                 <div class="role-chips small" id="dashRoleChips">
                   <div class="role-chip active small" data-role="Software Engineer">Software Engineer</div>
@@ -547,17 +638,21 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+
+        </div><!-- /dash-main -->
+      </div><!-- /dash-body -->
+    </div><!-- /dash-shell -->
   </div>
 </section>
 
-<!-- TESTIMONIALS -->
+<!-- ═══════════════════════════════════════════
+     TESTIMONIALS
+═══════════════════════════════════════════ -->
 <section id="testimonials">
   <div class="container">
-    <div class="section-tag reveal">Results</div>
-    <h2 class="section-h2 reveal">Real People,<br><span class="shimmer-text">Real Offers</span></h2>
+    <div class="section-eyebrow reveal">Results</div>
+    <h2 class="section-title reveal">Real People,<br><span class="gradient-text">Real Offers</span></h2>
+
     <div class="test-grid">
       <div class="test-card glass-card reveal">
         <div class="tc-stars">★★★★★</div>
@@ -587,48 +682,87 @@
   </div>
 </section>
 
-<!-- FAQ -->
+<!-- ═══════════════════════════════════════════
+     FAQ
+═══════════════════════════════════════════ -->
 <section id="faq">
   <div class="container">
-    <div class="section-tag reveal">FAQ</div>
-    <h2 class="section-h2 reveal">Common <span class="shimmer-text">Questions</span></h2>
-    <div class="faq-list">
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)"><span>How realistic are the AI mock interviews?</span><div class="faq-arr">+</div></div><div class="faq-a"><div class="faq-ai">Our AI adapts to your answers with real follow-up questions — just like a real interviewer. It evaluates content, structure, and delivery simultaneously.</div></div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)"><span>What interview types are supported?</span><div class="faq-arr">+</div></div><div class="faq-a"><div class="faq-ai">HR/behavioral, technical DSA, system design, and full mixed interviews — across 200+ job roles in tech, finance, consulting, and operations.</div></div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)"><span>How does the Technical Simulator work?</span><div class="faq-arr">+</div></div><div class="faq-a"><div class="faq-ai">The AI gives you a coding problem, you write your solution in the built-in editor plus explain your approach. The AI then evaluates your logic, time/space complexity, edge cases, and suggests optimizations.</div></div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)"><span>How does Resume Analysis work?</span><div class="faq-arr">+</div></div><div class="faq-a"><div class="faq-ai">Upload PDF, DOCX, or TXT. Our AI scores ATS compatibility, finds missing keywords for your target role, highlights strengths, and gives specific improvement recommendations.</div></div></div>
-      <div class="faq-item reveal"><div class="faq-q" onclick="toggleFaq(this)"><span>Is there a session limit?</span><div class="faq-arr">+</div></div><div class="faq-a"><div class="faq-ai">No session limits. Create a free account and practice as much as you want. All sessions are saved to your dashboard with full history and analytics.</div></div></div>
-    </div>
-  </div>
-</section>
+    <div class="section-eyebrow reveal">FAQ</div>
+    <h2 class="section-title reveal">Common <span class="gradient-text">Questions</span></h2>
 
-<!-- CTA -->
-<section id="cta">
-  <div class="container">
-    <div class="cta-box glass-card reveal">
-      <div class="cta-glow"></div>
-      <div class="section-tag" style="margin-bottom:20px">Start Today</div>
-      <h2 style="font-size:clamp(28px,4vw,48px);margin-bottom:16px">Ready to Ace<br><span class="shimmer-text">Your Next Interview?</span></h2>
-      <p style="color:var(--muted);margin-bottom:36px">Create your free account and start your first AI mock interview in under 2 minutes.</p>
-      <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
-        <button class="btn-glow" id="ctaStart">Get Started Free →</button>
-        <button class="btn-ghost-lg" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'})">Try without signing up</button>
+    <div class="faq-list">
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>How realistic are the AI mock interviews?</span><div class="faq-arr">+</div></div>
+        <div class="faq-a"><div class="faq-ai">Our AI adapts to your answers with real follow-up questions — just like a real interviewer. It evaluates content, structure, and delivery simultaneously.</div></div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>What interview types are supported?</span><div class="faq-arr">+</div></div>
+        <div class="faq-a"><div class="faq-ai">HR/behavioral, technical DSA, system design, and full mixed interviews — across 200+ job roles in tech, finance, consulting, and operations.</div></div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>How does the Technical Simulator work?</span><div class="faq-arr">+</div></div>
+        <div class="faq-a"><div class="faq-ai">The AI gives you a coding problem, you write your solution in the built-in editor plus explain your approach. The AI then evaluates your logic, time/space complexity, edge cases, and suggests optimizations.</div></div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>How does Resume Analysis work?</span><div class="faq-arr">+</div></div>
+        <div class="faq-a"><div class="faq-ai">Upload PDF, DOCX, or TXT. Our AI scores ATS compatibility, finds missing keywords for your target role, highlights strengths, and gives specific improvement recommendations.</div></div>
+      </div>
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>Is there a session limit?</span><div class="faq-arr">+</div></div>
+        <div class="faq-a"><div class="faq-ai">No session limits. Create a free account and practice as much as you want. All sessions are saved to your dashboard with full history and analytics.</div></div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- FOOTER -->
+<!-- ═══════════════════════════════════════════
+     CTA
+═══════════════════════════════════════════ -->
+<section id="cta">
+  <div class="container">
+    <div class="cta-box glass-card reveal">
+      <div class="cta-line-top"></div>
+      <div class="section-eyebrow" style="margin-bottom:20px">Start Today</div>
+      <h2 class="cta-title">Ready to Ace<br><span class="gradient-text">Your Next Interview?</span></h2>
+      <p class="cta-sub">Create your free account and start your first AI mock interview in under 2 minutes.</p>
+      <div class="cta-btns">
+        <button class="btn-hero-primary" id="ctaStart">Get Started Free →</button>
+        <button class="btn-hero-ghost" onclick="document.getElementById('ai-panel').scrollIntoView({behavior:'smooth'})">Try without signing up</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════ -->
 <footer>
   <div class="container">
     <div class="footer-grid">
       <div class="fg-brand">
-        <div class="logo" style="font-size:20px;margin-bottom:12px">Mock<em>AI</em></div>
+        <div class="logo" style="font-size:20px;margin-bottom:14px">Mock<em>AI</em></div>
         <p>The most intelligent interview preparation platform. Practice smarter, perform better, land faster.</p>
       </div>
-      <div class="fg-col"><h4>Product</h4><a href="#features">Features</a><a href="#how">How It Works</a><a href="#ai-panel">Try AI</a><a href="#dashboard">Dashboard</a></div>
-      <div class="fg-col"><h4>Company</h4><a href="#">About</a><a href="#">Blog</a><a href="#">Careers</a><a href="#">Contact</a></div>
-      <div class="fg-col"><h4>Legal</h4><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Cookies</a></div>
+      <div class="fg-col">
+        <h4>Product</h4>
+        <a href="#features">Features</a>
+        <a href="#how">How It Works</a>
+        <a href="#ai-panel">Try AI</a>
+        <a href="#dashboard">Dashboard</a>
+      </div>
+      <div class="fg-col">
+        <h4>Company</h4>
+        <a href="#">About</a>
+        <a href="#">Blog</a>
+        <a href="#">Careers</a>
+        <a href="#">Contact</a>
+      </div>
+      <div class="fg-col">
+        <h4>Legal</h4>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Cookies</a>
+      </div>
     </div>
     <div class="footer-bottom">
       <p>© 2025 MockAI Technologies. Made with ❤️ in India.</p>
@@ -636,38 +770,46 @@
   </div>
 </footer>
 
-<!-- AUTH MODAL -->
+<!-- ═══════════════════════════════════════════
+     AUTH MODAL
+═══════════════════════════════════════════ -->
 <div class="modal-overlay" id="authModal">
   <div class="modal-box glass-card">
-    <button class="modal-close" onclick="closeAuthModal()">✕</button>
+    <button class="modal-close" onclick="closeAuthModal()" aria-label="Close">✕</button>
     <div class="modal-kicker">MockAI Account</div>
     <h3 id="modalTitle">Sign In</h3>
+
     <div class="modal-tabs">
       <button class="mtab active" data-tab="login" onclick="switchAuth('login')">Sign In</button>
       <button class="mtab" data-tab="register" onclick="switchAuth('register')">Register</button>
     </div>
+
     <form class="mform active" id="loginForm">
-      <label>Email<input type="email" name="email" required autocomplete="email"></label>
-      <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
-      <button class="btn-glow" type="submit" style="width:100%;justify-content:center">Sign In</button>
+      <label>Email<input type="email" name="email" required autocomplete="email" /></label>
+      <label>Password<input type="password" name="password" required autocomplete="current-password" /></label>
+      <button class="btn-hero-primary" type="submit" style="width:100%;justify-content:center">Sign In</button>
     </form>
+
     <form class="mform" id="registerForm">
-      <label>Full Name<input type="text" name="name" required></label>
-      <label>Email<input type="email" name="email" required autocomplete="email"></label>
-      <label>Password<input type="password" name="password" required minlength="6"></label>
-      <label>College / University<input type="text" name="college"></label>
-      <label>Target Role<input type="text" name="targetRole" placeholder="e.g. Software Engineer"></label>
-      <button class="btn-glow" type="submit" style="width:100%;justify-content:center">Create Account</button>
+      <label>Full Name<input type="text" name="name" required /></label>
+      <label>Email<input type="email" name="email" required autocomplete="email" /></label>
+      <label>Password<input type="password" name="password" required minlength="6" /></label>
+      <label>College / University<input type="text" name="college" /></label>
+      <label>Target Role<input type="text" name="targetRole" placeholder="e.g. Software Engineer" /></label>
+      <button class="btn-hero-primary" type="submit" style="width:100%;justify-content:center">Create Account</button>
     </form>
+
     <div id="verificationBox" style="display:none"></div>
   </div>
 </div>
 
-<!-- VOICE INTERVIEW MODAL -->
+<!-- ═══════════════════════════════════════════
+     VOICE INTERVIEW MODAL
+═══════════════════════════════════════════ -->
 <div class="voice-modal" id="voiceModal">
   <div class="voice-modal-inner">
 
-    <!-- Permission Screen -->
+    <!-- Permission / intro screen -->
     <div class="voice-screen" id="vScreenPermission">
       <div class="vsap-wrap">
         <div class="vsap-ring r1"></div>
@@ -683,21 +825,20 @@
         <div class="vpf"><span>🤫</span>Silence detected → next question</div>
         <div class="vpf"><span>⚡</span>Instant AI scoring after each answer</div>
       </div>
-      <button class="btn-glow" id="vGrantMicBtn"><span>🎤</span> Allow Mic &amp; Start Interview</button>
+      <button class="btn-hero-primary" id="vGrantMicBtn">
+        <span>🎤</span> Allow Mic &amp; Start Interview
+      </button>
       <button class="voice-cancel-btn" onclick="closeVoiceModal()">Cancel</button>
     </div>
 
-    <!-- Active Interview Screen -->
+    <!-- Active interview screen -->
     <div class="voice-screen" id="vScreenInterview" style="display:none">
-
-      <!-- Topbar -->
       <div class="vint-topbar">
         <div class="vint-badge"><span class="live-dot" style="background:#10b981;box-shadow:0 0 8px #10b981"></span>Live Interview</div>
         <div class="vlang-indicator" id="vLangIndicator">🇬🇧 English</div>
         <button class="voice-close-btn" onclick="closeVoiceModal()">✕ End</button>
       </div>
 
-      <!-- Avatar -->
       <div class="vai-wrap" id="vaiWrap">
         <div class="vai-rings">
           <div class="vai-ring r1"></div>
@@ -711,25 +852,21 @@
       </div>
 
       <div class="vai-name">Priya — AI Interview Coach</div>
-      <div class="vai-status" id="vaiStatus">Preparing your interview...</div>
+      <div class="vai-status" id="vaiStatus">Preparing your interview…</div>
 
-      <!-- Speech box -->
       <div class="vai-speech-box" id="vaiSpeechBox">
         <div class="vai-speech-text" id="vaiSpeechText"></div>
       </div>
 
-      <!-- User transcript — final only, no interim -->
       <div class="vuser-transcript" id="vuserTranscript"></div>
 
-      <!-- Type fallback -->
       <div class="vtype-row">
-        <input type="text" class="vtype-input" id="vtypeInput" placeholder="Or type your answer here and press Enter...">
-        <button class="ai-send-btn" id="vtypeSend">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <input type="text" class="vtype-input" id="vtypeInput" placeholder="Or type your answer here and press Enter…" />
+        <button class="ai-send-btn" id="vtypeSend" aria-label="Send typed answer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
 
-      <!-- Scores -->
       <div class="vscores-bar">
         <div class="vscore-item"><div class="vsi-label">Confidence</div><div class="vsi-val" id="vConfVal">—</div></div>
         <div class="vscore-divider"></div>
@@ -744,6 +881,7 @@
   </div>
 </div>
 
+<!-- Scripts — api.js must load before script.js -->
 <script src="api.js"></script>
 <script src="script.js"></script>
 </body>

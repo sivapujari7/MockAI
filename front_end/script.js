@@ -1,41 +1,56 @@
-window.onerror = function(msg, src, line, col, err) {
+/* ============================================================
+   MockAI — Main Application Script
+   Handles UI, AI interview flow, voice engine, dashboard,
+   auth modal, resume upload, and all event wiring.
+
+   Depends on: api.js (must load first)
+   ============================================================ */
+
+/* ── Global error handler — prevents white screen on JS errors ── */
+window.onerror = function (msg, src, line, col, err) {
   console.warn('[MockAI Error]', msg, 'at', src + ':' + line);
   _forceHideLoader();
   return false;
 };
-window.addEventListener('unhandledrejection', function(e) {
+window.addEventListener('unhandledrejection', function (e) {
   console.warn('[MockAI Unhandled Promise]', e.reason);
 });
 
-// -- LOADER --
-// Hard 3s fallback in case CDN scripts stall and window 'load' never fires
+/* ════════════════════════════════════
+   LOADER
+════════════════════════════════════ */
+
+// Hard 3-second fallback in case the window 'load' event never fires
+// (e.g. a CDN script stalls or a resource 404s)
 function _forceHideLoader() {
   try {
-    const l = document.getElementById('loader');
+    var l = document.getElementById('loader');
     if (!l || l.style.display === 'none') return;
     l.style.transition = 'opacity 0.5s ease';
     l.style.opacity = '0';
-    setTimeout(function() {
-      if (l) l.style.display = 'none';
-    }, 500);
-  } catch(e) {}
+    setTimeout(function () { if (l) l.style.display = 'none'; }, 500);
+  } catch (e) {}
 }
 
-const _loaderFallback = setTimeout(_forceHideLoader, 3000);
+var _loaderFallback = setTimeout(_forceHideLoader, 3000);
 
-window.addEventListener('load', function() {
+window.addEventListener('load', function () {
   clearTimeout(_loaderFallback);
   setTimeout(_forceHideLoader, 800);
 });
 
+// If the page was already loaded before this script ran
 if (document.readyState === 'complete') {
   clearTimeout(_loaderFallback);
   setTimeout(_forceHideLoader, 800);
 }
 
-// -- TOAST --
-// Using textContent instead of innerHTML to avoid XSS
-// Close button uses cursor:pointer (not none) so mobile touch works
+/* ════════════════════════════════════
+   TOAST NOTIFICATIONS
+════════════════════════════════════ */
+
+// Shows a small toast at the bottom-right corner.
+// type: 'success' | 'error' | 'info' | 'warning'
 function showToast(msg, type) {
   type = type || 'info';
   try {
@@ -45,27 +60,27 @@ function showToast(msg, type) {
       t.id = 'toast';
       document.body.appendChild(t);
     }
-    var colors  = { success:'#10b981', error:'#ef4444', info:'#6366f1', warning:'#f59e0b' };
-    var icons   = { success:'\u2713', error:'!', info:'i', warning:'!' };
-    var color   = colors[type] || colors.info;
-    var icon    = icons[type]  || 'i';
+
+    var colors = { success: '#10b981', error: '#ef4444', info: '#6366f1', warning: '#f59e0b' };
+    var icons  = { success: '✓', error: '!', info: 'i', warning: '!' };
+    var color  = colors[type] || colors.info;
 
     t.style.borderLeftColor = color;
-
     t.innerHTML = '';
+
     var iconEl = document.createElement('span');
     iconEl.style.cssText = 'color:' + color + ';font-weight:800;font-size:16px';
-    iconEl.textContent = icon;
+    iconEl.textContent = icons[type] || 'i';
 
     var msgEl = document.createElement('span');
     msgEl.style.flex = '1';
-    msgEl.textContent = msg;
+    msgEl.textContent = msg; // textContent prevents XSS
 
     var closeEl = document.createElement('button');
-    closeEl.style.cssText = 'background:none;border:none;color:var(--dim,#888);font-size:18px;line-height:1;cursor:pointer';
-    closeEl.textContent = '\xd7';
+    closeEl.style.cssText = 'background:none;border:none;color:rgba(238,242,255,0.4);font-size:18px;line-height:1;cursor:pointer';
+    closeEl.textContent = '×';
     closeEl.setAttribute('aria-label', 'Close notification');
-    closeEl.addEventListener('click', function() { t.classList.remove('show'); });
+    closeEl.addEventListener('click', function () { t.classList.remove('show'); });
 
     t.appendChild(iconEl);
     t.appendChild(msgEl);
@@ -73,44 +88,44 @@ function showToast(msg, type) {
     t.classList.add('show');
 
     clearTimeout(t._timer);
-    t._timer = setTimeout(function() { t.classList.remove('show'); }, 5000);
-  } catch(e) {
+    t._timer = setTimeout(function () { t.classList.remove('show'); }, 5000);
+  } catch (e) {
     console.warn('Toast error:', e);
   }
 }
 window.showToast = showToast;
 
-// -- LOADING STATE --
+/* ── Button loading state helper ── */
 function setLoading(btn, loading) {
   if (!btn) return;
   try {
     if (loading) {
       btn.disabled = true;
       btn.dataset.orig = btn.innerHTML;
-      btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px"><span class="mini-spinner"></span>Loading...</span>';
+      btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px"><span class="mini-spinner"></span>Loading…</span>';
     } else {
       btn.disabled = false;
       btn.innerHTML = btn.dataset.orig || btn.innerHTML;
     }
-  } catch(e) {}
+  } catch (e) {}
 }
 window.setLoading = setLoading;
 
-// -- THREE.JS 3D BACKGROUND --
-// Skipped on mobile to save battery. Gracefully skipped if CDN fails.
+/* ════════════════════════════════════
+   THREE.JS 3D BACKGROUND
+════════════════════════════════════ */
+
+// Skip on mobile to save battery. Gracefully skipped if CDN fails.
 (function initThree() {
   if (window.innerWidth < 768 || navigator.maxTouchPoints > 1) return;
 
   var script = document.createElement('script');
   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-  script.onerror = function() {
-    console.warn('[Three.js] CDN failed - skipping 3D background');
-  };
-  script.onload = function() {
-    // Small delay ensures THREE is fully parsed before we use it
-    setTimeout(function() {
+  script.onerror = function () { console.warn('[Three.js] CDN failed — skipping 3D background'); };
+  script.onload = function () {
+    setTimeout(function () {
       try { _initThreeScene(); }
-      catch(e) { console.warn('[Three.js] Scene init failed:', e.message); }
+      catch (e) { console.warn('[Three.js] Scene init failed:', e.message); }
     }, 50);
   };
   document.head.appendChild(script);
@@ -129,13 +144,14 @@ function _initThreeScene() {
   var camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.z = 5;
 
+  // Floating particle nodes
   var nodes   = [];
   var nodeGeo = new THREE.SphereGeometry(0.04, 8, 8);
   var nodeMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.6 });
   for (var i = 0; i < 80; i++) {
     var m = new THREE.Mesh(nodeGeo, nodeMat.clone());
-    m.position.set((Math.random()-0.5)*16, (Math.random()-0.5)*10, (Math.random()-0.5)*8);
-    m.userData = { vx: (Math.random()-0.5)*0.003, vy: (Math.random()-0.5)*0.003 };
+    m.position.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8);
+    m.userData = { vx: (Math.random() - 0.5) * 0.003, vy: (Math.random() - 0.5) * 0.003 };
     scene.add(m);
     nodes.push(m);
   }
@@ -144,30 +160,26 @@ function _initThreeScene() {
   var lineGroup = new THREE.Group();
   scene.add(lineGroup);
 
-  var tGeo  = new THREE.TorusGeometry(2.2, 0.008, 16, 120);
-  var tMat  = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.12 });
-  var torus = new THREE.Mesh(tGeo, tMat);
+  // Decorative torus rings
+  var torus  = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.008, 16, 120), new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.12 }));
   torus.rotation.x = 0.4;
   scene.add(torus);
 
-  var tGeo2  = new THREE.TorusGeometry(3.2, 0.005, 16, 120);
-  var tMat2  = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.08 });
-  var torus2 = new THREE.Mesh(tGeo2, tMat2);
+  var torus2 = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.005, 16, 120), new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.08 }));
   torus2.rotation.x = -0.3; torus2.rotation.y = 0.5;
   scene.add(torus2);
 
-  var iGeo = new THREE.IcosahedronGeometry(1.5, 1);
-  var iMat = new THREE.MeshBasicMaterial({ color: 0x8b5cf6, wireframe: true, transparent: true, opacity: 0.05 });
-  var ico  = new THREE.Mesh(iGeo, iMat);
+  var ico = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 1), new THREE.MeshBasicMaterial({ color: 0x8b5cf6, wireframe: true, transparent: true, opacity: 0.05 }));
   scene.add(ico);
 
+  // Subtle mouse parallax
   var mouse = { x: 0, y: 0 };
-  document.addEventListener('mousemove', function(e) {
+  document.addEventListener('mousemove', function (e) {
     mouse.x =  (e.clientX / window.innerWidth  - 0.5) * 2;
     mouse.y = -(e.clientY / window.innerHeight - 0.5) * 2;
   }, { passive: true });
 
-  window.addEventListener('resize', function() {
+  window.addEventListener('resize', function () {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -184,17 +196,18 @@ function _initThreeScene() {
     camera.position.x += (mouse.x * 0.3 - camera.position.x) * 0.04;
     camera.position.y += (mouse.y * 0.2 - camera.position.y) * 0.04;
 
-    nodes.forEach(function(n) {
+    nodes.forEach(function (n) {
       n.position.x += n.userData.vx;
       n.position.y += n.userData.vy;
       if (Math.abs(n.position.x) > 8) n.userData.vx *= -1;
       if (Math.abs(n.position.y) > 5) n.userData.vy *= -1;
     });
 
+    // Rebuild connection lines every 60 frames (performance)
     if (frame % 60 === 0) {
       while (lineGroup.children.length) lineGroup.remove(lineGroup.children[0]);
       for (var a = 0; a < nodes.length; a++) {
-        for (var b = a+1; b < nodes.length; b++) {
+        for (var b = a + 1; b < nodes.length; b++) {
           if (nodes[a].position.distanceTo(nodes[b].position) < 2.5) {
             var geo = new THREE.BufferGeometry().setFromPoints([nodes[a].position, nodes[b].position]);
             lineGroup.add(new THREE.Line(geo, lineMat));
@@ -207,75 +220,102 @@ function _initThreeScene() {
   animate();
 }
 
-// -- SCROLL REVEAL --
-// Runs at DOMContentLoaded so elements actually exist
+/* ════════════════════════════════════
+   SCROLL REVEAL
+════════════════════════════════════ */
+
+// Uses IntersectionObserver to animate elements into view as the user scrolls.
+// Falls back to making everything visible immediately on older browsers.
 function _initScrollReveal() {
   if (!('IntersectionObserver' in window)) {
-    document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) {
+    document.querySelectorAll('.reveal,.reveal-right').forEach(function (el) {
       el.classList.add('visible');
     });
     return;
   }
-  var ro = new IntersectionObserver(function(entries) {
-    entries.forEach(function(e) {
+
+  var ro = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
       if (e.isIntersecting) {
         var delay = parseFloat(e.target.style.transitionDelay || '0') * 1000;
-        setTimeout(function() { e.target.classList.add('visible'); }, delay);
+        setTimeout(function () { e.target.classList.add('visible'); }, delay);
       }
     });
   }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-  document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) { ro.observe(el); });
+
+  document.querySelectorAll('.reveal,.reveal-right').forEach(function (el) { ro.observe(el); });
 }
 
-// -- NAV --
+/* ════════════════════════════════════
+   NAVIGATION
+════════════════════════════════════ */
+
 function _initNav() {
-  window.addEventListener('scroll', function() {
+  // Add 'scrolled' class to nav when user scrolls past 50px
+  window.addEventListener('scroll', function () {
     var nav = document.getElementById('nav');
     if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
   }, { passive: true });
 
-  var hamburger  = document.getElementById('hamburger');
-  var mobileMenu = document.getElementById('mobileMenu');
+  // Hamburger opens mobile menu
+  var hamburger   = document.getElementById('hamburger');
+  var mobileMenu  = document.getElementById('mobileMenu');
   var mobileClose = document.getElementById('mobileClose');
 
-  if (hamburger)   hamburger.addEventListener('click',   function() { mobileMenu && mobileMenu.classList.add('open'); });
-  if (mobileClose) mobileClose.addEventListener('click', function() { mobileMenu && mobileMenu.classList.remove('open'); });
+  if (hamburger)   hamburger.addEventListener('click',   function () { mobileMenu && mobileMenu.classList.add('open'); });
+  if (mobileClose) mobileClose.addEventListener('click', function () { mobileMenu && mobileMenu.classList.remove('open'); });
 
-  document.querySelectorAll('.mm-link').forEach(function(a) {
-    a.addEventListener('click', function() { mobileMenu && mobileMenu.classList.remove('open'); });
+  // Close mobile menu when a nav link is tapped
+  document.querySelectorAll('.mm-link').forEach(function (a) {
+    a.addEventListener('click', function () { mobileMenu && mobileMenu.classList.remove('open'); });
   });
 }
 
-// -- SMOOTH SCROLL --
+/* ════════════════════════════════════
+   SMOOTH SCROLL
+════════════════════════════════════ */
+
 function _initSmoothScroll() {
-  document.querySelectorAll('a[href^="#"]').forEach(function(a) {
-    a.addEventListener('click', function(e) {
+  document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
       var target = document.querySelector(a.getAttribute('href'));
       if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
     });
   });
 }
 
-// -- FAQ --
-window.toggleFaq = function(btn) {
+/* ════════════════════════════════════
+   FAQ ACCORDION
+════════════════════════════════════ */
+
+// Called from onclick in HTML. Toggles the clicked FAQ item open/closed.
+window.toggleFaq = function (btn) {
   if (!btn) return;
   var item = btn.parentElement;
   if (!item) return;
   var a    = item.querySelector('.faq-a');
   if (!a)  return;
   var open = item.classList.contains('open');
-  document.querySelectorAll('.faq-item').forEach(function(f) {
+
+  // Close all items first
+  document.querySelectorAll('.faq-item').forEach(function (f) {
     f.classList.remove('open');
     var fa = f.querySelector('.faq-a');
     if (fa) fa.style.maxHeight = '0';
   });
+
+  // Open the clicked one if it was closed
   if (!open) {
     item.classList.add('open');
     a.style.maxHeight = a.scrollHeight + 'px';
   }
 };
 
-// -- BACKEND CHECK --
+/* ════════════════════════════════════
+   BACKEND HEALTH CHECK
+════════════════════════════════════ */
+
+// Pings the backend before any API call. Returns false and shows a toast if unreachable.
 async function checkBackend() {
   try {
     if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') {
@@ -284,51 +324,64 @@ async function checkBackend() {
     }
     await MockAI.apiHealth();
     return true;
-  } catch(err) {
+  } catch (err) {
     showToast(err && err.message ? err.message : 'Cannot reach server.', 'error');
     return false;
   }
 }
 
-// -- RESUME UPLOAD --
+/* ════════════════════════════════════
+   RESUME UPLOAD
+════════════════════════════════════ */
+
+// Wires up role chip selection and file input display for both
+// the landing page resume panel and the dashboard resume panel.
 function _initResumeChips() {
-  document.querySelectorAll('.role-chips .role-chip').forEach(function(chip) {
-    chip.addEventListener('click', function() {
+  document.querySelectorAll('.role-chips .role-chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
       var siblings = this.closest('.role-chips');
-      if (siblings) siblings.querySelectorAll('.role-chip').forEach(function(c) { c.classList.remove('active'); });
+      if (siblings) siblings.querySelectorAll('.role-chip').forEach(function (c) { c.classList.remove('active'); });
       this.classList.add('active');
     });
   });
 
+  // Show selected filename in the landing page drop zone
   var resumeFile = document.getElementById('resumeFile');
   if (resumeFile) {
-    resumeFile.addEventListener('change', function() {
+    resumeFile.addEventListener('change', function () {
       var disp = document.getElementById('resumeFileName');
-      if (disp && this.files[0]) disp.textContent = '\ud83d\udcc4 ' + this.files[0].name;
+      if (disp && this.files[0]) disp.textContent = '📄 ' + this.files[0].name;
     });
   }
 
+  // Show selected filename in the dashboard drop zone
   var dashFile = document.getElementById('dashResumeFile');
   if (dashFile) {
-    dashFile.addEventListener('change', function() {
+    dashFile.addEventListener('change', function () {
       var drop = document.getElementById('dashResumeDrop');
       if (drop && this.files[0]) {
         var dt = drop.querySelector('.drop-text');
-        if (dt) dt.textContent = '\ud83d\udcc4 ' + this.files[0].name;
+        if (dt) dt.textContent = '📄 ' + this.files[0].name;
       }
     });
   }
 }
 
+// Handles the actual resume upload and renders the AI analysis result.
+// fileInputId — the <input type="file"> element ID
+// btnId       — the analyze button ID (for loading state)
+// resultId    — the container where the result card is rendered
+// roleSel     — CSS selector for the role chips container
 async function handleResumeUpload(fileInputId, btnId, resultId, roleSel) {
   var fileInput = document.getElementById(fileInputId);
   var btn       = document.getElementById(btnId);
   var resultEl  = document.getElementById(resultId);
   var file      = fileInput && fileInput.files[0];
+
   if (!file) { showToast('Please select a resume file first.', 'error'); return; }
 
   setLoading(btn, true);
-  if (resultEl) resultEl.innerHTML = '<div class="resume-analyzing"><div class="mini-spinner" style="width:24px;height:24px;border-width:3px"></div><p>AI is analyzing your resume...</p></div>';
+  if (resultEl) resultEl.innerHTML = '<div class="resume-analyzing"><div class="mini-spinner" style="width:24px;height:24px;border-width:3px"></div><p>AI is analyzing your resume…</p></div>';
 
   try {
     var available = await checkBackend();
@@ -342,6 +395,7 @@ async function handleResumeUpload(fileInputId, btnId, resultId, roleSel) {
 
     var formData = new FormData();
     formData.append('resume', file);
+
     var activeChip = document.querySelector(roleSel + ' .role-chip.active');
     var role = activeChip ? (activeChip.dataset.role || 'Software Engineer') : 'Software Engineer';
     formData.append('targetRole', role);
@@ -349,7 +403,7 @@ async function handleResumeUpload(fileInputId, btnId, resultId, roleSel) {
     var data = await MockAI.uploadResume(formData);
     if (!data || !data.analysis) throw new Error('No analysis returned.');
     renderResumeResult(data.analysis, resultEl);
-  } catch(err) {
+  } catch (err) {
     showToast('Resume analysis failed: ' + (err.message || 'Unknown error'), 'error');
     if (resultEl) resultEl.innerHTML = '';
   } finally {
@@ -357,77 +411,94 @@ async function handleResumeUpload(fileInputId, btnId, resultId, roleSel) {
   }
 }
 
+// Renders the ATS score ring + skills/improvements into the result container.
 function renderResumeResult(analysis, el) {
   if (!el || !analysis) return;
   var ats  = analysis.atsScore || 0;
   var col  = ats >= 80 ? '#10b981' : ats >= 60 ? '#f59e0b' : '#ef4444';
   var circ = 2 * Math.PI * 28;
 
-  var skills  = (analysis.skillsFound  || []).map(function(s) { return '<span class="res-tag good">' + _esc(s) + '</span>'; }).join('');
-  var missing = (analysis.missingSkills|| []).map(function(s) { return '<span class="res-tag miss">' + _esc(s) + '</span>'; }).join('');
-  var strengths = (analysis.strengths  || []).map(function(s) { return '<li>' + _esc(s) + '</li>'; }).join('');
-  var improv    = (analysis.improvements|| []).map(function(i) { return '<li>' + _esc(i) + '</li>'; }).join('');
+  var skills    = (analysis.skillsFound   || []).map(function (s) { return '<span class="res-tag good">' + _esc(s) + '</span>'; }).join('');
+  var missing   = (analysis.missingSkills || []).map(function (s) { return '<span class="res-tag miss">' + _esc(s) + '</span>'; }).join('');
+  var strengths = (analysis.strengths     || []).map(function (s) { return '<li>' + _esc(s) + '</li>'; }).join('');
+  var improv    = (analysis.improvements  || []).map(function (i) { return '<li>' + _esc(i) + '</li>'; }).join('');
 
-  el.innerHTML = '<div class="resume-result-card">'
+  el.innerHTML =
+    '<div class="resume-result-card">'
     + '<div class="resume-result-header">'
     + '<div class="ats-ring-wrap" style="width:72px;height:72px;flex-shrink:0">'
     + '<svg viewBox="0 0 72 72" width="72" height="72" style="transform:rotate(-90deg)">'
     + '<circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="7"/>'
     + '<circle cx="36" cy="36" r="28" fill="none" stroke="' + col + '" stroke-width="7"'
-    + ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + (circ*(1-ats/100)) + '"'
+    + ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + (circ * (1 - ats / 100)) + '"'
     + ' stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/>'
     + '</svg><div class="ats-score-num" style="color:' + col + '">' + ats + '%</div></div>'
     + '<div><div style="font-weight:700;font-size:15px;margin-bottom:4px">ATS Score</div>'
     + '<div style="font-size:12px;color:var(--muted)">' + _esc(analysis.summary || 'Analysis complete.') + '</div>'
     + '</div></div>'
-    + (skills   ? '<div><div class="resume-section-label">\u2713 Skills Detected</div><div class="res-tags">'  + skills   + '</div></div>' : '')
-    + (missing  ? '<div><div class="resume-section-label">\u26a0 Missing Keywords</div><div class="res-tags">' + missing  + '</div></div>' : '')
-    + (strengths? '<div><div class="resume-section-label">\ud83d\udcaa Strengths</div><ul class="res-improve-list">' + strengths+ '</ul></div>'   : '')
-    + (improv   ? '<div><div class="resume-section-label">\ud83d\udca1 Improvements</div><ul class="res-improve-list">'+ improv  + '</ul></div>'   : '')
+    + (skills    ? '<div><div class="resume-section-label">✓ Skills Detected</div><div class="res-tags">'    + skills    + '</div></div>' : '')
+    + (missing   ? '<div><div class="resume-section-label">⚠ Missing Keywords</div><div class="res-tags">'  + missing   + '</div></div>' : '')
+    + (strengths ? '<div><div class="resume-section-label">💪 Strengths</div><ul class="res-improve-list">' + strengths + '</ul></div>'   : '')
+    + (improv    ? '<div><div class="resume-section-label">💡 Improvements</div><ul class="res-improve-list">' + improv + '</ul></div>'   : '')
     + '</div>';
 }
 
+// Escapes HTML special characters to prevent XSS in rendered content
 function _esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-// -- AUTH MODAL --
+/* ════════════════════════════════════
+   AUTH MODAL
+════════════════════════════════════ */
+
+// Opens the auth modal and switches to the given tab ('login' or 'register')
 function openAuthModal(mode) {
   mode = mode || 'login';
   var m = document.getElementById('authModal');
   if (m) m.classList.add('open');
   switchAuth(mode);
 }
+
+// Closes the auth modal
 function closeAuthModal() {
   var m = document.getElementById('authModal');
   if (m) m.classList.remove('open');
 }
+
 window.openAuthModal  = openAuthModal;
 window.closeAuthModal = closeAuthModal;
 
-window.switchAuth = function(mode) {
-  document.querySelectorAll('.mtab').forEach(function(t) {
+// Switches between the Sign In and Register tabs inside the modal
+window.switchAuth = function (mode) {
+  document.querySelectorAll('.mtab').forEach(function (t) {
     t.classList.toggle('active', t.dataset.tab === mode);
   });
   var lf = document.getElementById('loginForm');
   var rf = document.getElementById('registerForm');
   if (lf) lf.classList.toggle('active', mode === 'login');
   if (rf) rf.classList.toggle('active', mode === 'register');
-  var h = document.querySelector('#authModal h3');
+  var h = document.getElementById('modalTitle');
   if (h) h.textContent = mode === 'register' ? 'Create Account' : 'Sign In';
 };
 
 function _initAuthModal() {
   var modal = document.getElementById('authModal');
   if (modal) {
-    modal.addEventListener('click', function(e) {
+    // Close modal when clicking the dark backdrop
+    modal.addEventListener('click', function (e) {
       if (e.target === modal) closeAuthModal();
     });
   }
 
+  // Login form submission
   var loginForm = document.getElementById('loginForm');
   if (loginForm) {
-    loginForm.addEventListener('submit', async function(e) {
+    loginForm.addEventListener('submit', async function (e) {
       e.preventDefault();
       var btn = e.currentTarget.querySelector('button[type=submit]');
       var fd  = new FormData(e.currentTarget);
@@ -441,7 +512,7 @@ function _initAuthModal() {
         showToast('Welcome back!', 'success');
         updateAuthUI();
         loadDashboard();
-      } catch(err) {
+      } catch (err) {
         showToast(err && err.message ? err.message : 'Login failed.', 'error');
       } finally {
         setLoading(btn, false);
@@ -449,9 +520,10 @@ function _initAuthModal() {
     });
   }
 
+  // Register form submission
   var regForm = document.getElementById('registerForm');
   if (regForm) {
-    regForm.addEventListener('submit', async function(e) {
+    regForm.addEventListener('submit', async function (e) {
       e.preventDefault();
       var btn = e.currentTarget.querySelector('button[type=submit]');
       var fd  = new FormData(e.currentTarget);
@@ -470,7 +542,7 @@ function _initAuthModal() {
           }
         }
         showToast((data && data.message) || 'Account created! Please verify your email.', 'success');
-      } catch(err) {
+      } catch (err) {
         showToast(err && err.message ? err.message : 'Registration failed.', 'error');
       } finally {
         setLoading(btn, false);
@@ -479,67 +551,94 @@ function _initAuthModal() {
   }
 }
 
-// -- AUTH UI --
+/* ════════════════════════════════════
+   AUTH UI STATE
+════════════════════════════════════ */
+
+// Updates the nav button and dashboard header to reflect the logged-in user
 function updateAuthUI() {
   try {
-    var user      = (typeof getUser    === 'function') ? getUser()    : null;
-    var loggedIn  = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+    var user     = (typeof getUser    === 'function') ? getUser()    : null;
+    var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
 
     var navBtn = document.getElementById('navSignIn');
     if (navBtn) {
       navBtn.textContent = (user && user.name) ? ('Hi, ' + user.name.split(' ')[0]) : 'Sign In';
-      navBtn.onclick = loggedIn ? null : function() { openAuthModal('login'); };
+      navBtn.onclick = loggedIn ? null : function () { openAuthModal('login'); };
     }
 
     var ava  = document.getElementById('dashAva');
     var name = document.getElementById('dashName');
     var plan = document.getElementById('dashPlan');
     if (user) {
-      var initials = user.name ? user.name.split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2) : 'ME';
+      var initials = user.name
+        ? user.name.split(' ').map(function (w) { return w[0]; }).join('').toUpperCase().slice(0, 2)
+        : 'ME';
       if (ava)  ava.textContent  = initials;
       if (name) name.textContent = user.name  || 'User';
       if (plan) plan.textContent = user.plan  || 'Free';
     }
-  } catch(e) {
+  } catch (e) {
     console.warn('updateAuthUI error:', e);
   }
 }
 
-// -- AI INTERVIEW PANEL (text mode) --
-var aiMode        = 'mixed';
-var aiInterviewId = null;
-var aiIsTyping    = false;
+/* ════════════════════════════════════
+   AI INTERVIEW PANEL (text mode)
+════════════════════════════════════ */
 
-var modeLabels = { mixed:'Full Mock Interview', hr:'HR Behavioral Interview', technical:'Technical Coding Interview' };
+var aiMode        = 'mixed';   // current interview mode
+var aiInterviewId = null;      // active interview session ID from backend
+var aiIsTyping    = false;     // prevents double-sends while AI is responding
+
+var modeLabels = {
+  mixed:     'Full Mock Interview',
+  hr:        'HR Behavioral Interview',
+  technical: 'Technical Coding Interview'
+};
+
 var modeIntros = {
   mixed:     "Hello! I'm Alex, your AI interviewer. I'll mix behavioral and technical questions. Say **Ready** or type your answer to begin!",
   hr:        "Hi! I'm Alex. Today we're focusing on **HR and behavioral** questions using the STAR method. Tell me about yourself to start!",
-  technical: "Hey! I'm Alex. Let's dive into **technical questions** - DS&A, system design, and problem-solving. Ready for your first problem?"
+  technical: "Hey! I'm Alex. Let's dive into **technical questions** — DS&A, system design, and problem-solving. Ready for your first problem?"
 };
 
-window.setAIMode = function(mode) {
+// Switches the AI panel to a different interview mode.
+// Called from onclick attributes on the mode buttons and feature cards.
+window.setAIMode = function (mode) {
   aiMode = mode;
-  document.querySelectorAll('.ai-mode-btn').forEach(function(b) {
+
+  document.querySelectorAll('.ai-mode-btn').forEach(function (b) {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
+
   var label = document.getElementById('aiModeLabel');
   if (label) label.textContent = modeLabels[mode] || mode;
+
+  // Show code editor only in technical mode
   var techWrap = document.getElementById('techEditorWrap');
   if (techWrap) techWrap.style.display = mode === 'technical' ? 'block' : 'none';
+
+  // Reset the session so a new interview starts fresh
   aiInterviewId = null;
+
   var msgs = document.getElementById('aiMessages');
   if (msgs) {
     msgs.innerHTML = '';
     addAIMsg(modeIntros[mode] || modeIntros.mixed, false);
   }
+
   updateFeedback(null);
 };
 
+// Appends a message bubble to the chat window.
+// isUser = true renders it as the user's bubble (right-aligned, blue tint)
 function addAIMsg(text, isUser) {
   var msgs = document.getElementById('aiMessages');
   if (!msgs) return;
   var div = document.createElement('div');
   div.className = 'ai-msg-bubble ' + (isUser ? 'user-bubble' : 'ai-bubble');
+  // Allow **bold** markdown in AI messages
   div.innerHTML = text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
@@ -547,6 +646,7 @@ function addAIMsg(text, isUser) {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
+// Shows the animated typing indicator while waiting for the AI response
 function showAITyping() {
   var msgs = document.getElementById('aiMessages');
   if (!msgs || aiIsTyping) return;
@@ -558,32 +658,37 @@ function showAITyping() {
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
 }
+
 function hideAITyping() {
   var el = document.getElementById('aiTyping');
   if (el) el.remove();
   aiIsTyping = false;
 }
 
+// Updates the live score bars and tips panel after each AI response
 function updateFeedback(feedback) {
   var fields = [
-    ['fConf','fConfVal', feedback && feedback.confidenceScore],
-    ['fComm','fCommVal', feedback && feedback.communicationScore],
-    ['fTech','fTechVal', feedback && feedback.technicalScore],
+    ['fConf', 'fConfVal', feedback && feedback.confidenceScore],
+    ['fComm', 'fCommVal', feedback && feedback.communicationScore],
+    ['fTech', 'fTechVal', feedback && feedback.technicalScore],
   ];
-  fields.forEach(function(f) {
-    var bar = document.getElementById(f[0]);
-    var val = document.getElementById(f[1]);
+  fields.forEach(function (f) {
+    var bar   = document.getElementById(f[0]);
+    var val   = document.getElementById(f[1]);
     var score = f[2];
     if (bar) bar.style.width = score ? score + '%' : '0%';
-    if (val) val.textContent = score ? score + '%' : '-';
+    if (val) val.textContent = score ? score + '%' : '—';
   });
+
   var tips = feedback && feedback.tips;
   if (tips && tips.length) {
     var list = document.getElementById('tipsList');
-    if (list) list.innerHTML = tips.map(function(t){ return '<div class="tip-item">' + _esc(t) + '</div>'; }).join('');
+    if (list) list.innerHTML = tips.map(function (t) { return '<div class="tip-item">' + _esc(t) + '</div>'; }).join('');
   }
 }
 
+// Sends the user's typed answer to the backend AI and displays the response.
+// Requires the user to be logged in — prompts auth modal if not.
 async function sendAIMessage() {
   var input   = document.getElementById('aiInput');
   var code    = document.getElementById('codeEditor');
@@ -591,6 +696,7 @@ async function sendAIMessage() {
   var text    = input && input.value.trim();
   if (!text || aiIsTyping) return;
 
+  // Append code solution to the message in technical mode
   if (aiMode === 'technical' && code && code.value.trim()) {
     text += '\n\n**My Code Solution:**\n```\n' + code.value.trim() + '\n```';
     code.value = '';
@@ -603,6 +709,7 @@ async function sendAIMessage() {
     return;
   }
 
+  // Show user message and clear input
   addAIMsg(text.replace(/\n\n\*\*My Code[\s\S]*$/, ''), true);
   if (input) input.value = '';
   if (sendBtn) sendBtn.disabled = true;
@@ -612,16 +719,19 @@ async function sendAIMessage() {
     if (typeof interviewStart !== 'function' || typeof interviewMessage !== 'function') {
       throw new Error('Interview service not ready.');
     }
+
+    // Start a new interview session if one isn't active yet
     if (!aiInterviewId) {
       var started = await interviewStart('Software Engineer', 'General', aiMode, 'intermediate');
       aiInterviewId = started.interview._id;
     }
+
     var data = await interviewMessage(aiInterviewId, text);
     hideAITyping();
     if (sendBtn) sendBtn.disabled = false;
-    if (data.feedback) updateFeedback(data.feedback);
+    if (data.feedback)  updateFeedback(data.feedback);
     if (data.aiMessage) addAIMsg(data.aiMessage, false);
-  } catch(err) {
+  } catch (err) {
     hideAITyping();
     if (sendBtn) sendBtn.disabled = false;
     showToast((err && err.message) || 'AI interview error. Try again.', 'error');
@@ -634,13 +744,15 @@ function _initAIPanel() {
 
   var aiInput = document.getElementById('aiInput');
   if (aiInput) {
-    aiInput.addEventListener('keydown', function(e) {
+    aiInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAIMessage(); }
     });
   }
 }
 
-window.loadQuick = function(chip) {
+// Loads a quick-start question into the chat as an AI prompt bubble.
+// The user can then type their answer in the input box.
+window.loadQuick = function (chip) {
   if (!chip) return;
   var q    = chip.dataset.q;
   var msgs = document.getElementById('aiMessages');
@@ -654,16 +766,64 @@ window.loadQuick = function(chip) {
   if (aiInput) aiInput.focus();
 };
 
-// -- DASHBOARD --
+/* ════════════════════════════════════
+   DASHBOARD
+════════════════════════════════════ */
+
+// Switches the active dashboard panel.
+// Works for both the top tab bar (.dash-tab) and the sidebar (.ds-item).
+function switchDashTab(tab) {
+  if (!tab) return;
+
+  // Update top tabs
+  document.querySelectorAll('.dash-tab').forEach(function (t) {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+
+  // Update sidebar items
+  document.querySelectorAll('.ds-item').forEach(function (item) {
+    item.classList.toggle('active', item.dataset.section === tab);
+  });
+
+  // Show the matching panel, hide all others
+  document.querySelectorAll('.dash-panel').forEach(function (p) {
+    p.classList.toggle('active', p.id === 'panel-' + tab);
+  });
+}
+window.switchDashTab = switchDashTab;
+
+// Formats a date string into a human-readable relative label
 function relDate(d) {
   try {
     var diff = Date.now() - new Date(d).getTime();
     var days = Math.floor(diff / 86400000);
     return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : (days + 'd ago');
-  } catch(e) { return '-'; }
+  } catch (e) { return '—'; }
 }
-function scoreClass(s) { return s >= 80 ? 'sp-hi' : s >= 65 ? 'sp-mid' : 'sp-lo'; }
 
+// Returns a CSS class for a score pill based on the score value
+function scoreClass(s) {
+  return s >= 80 ? 'sp-hi' : s >= 65 ? 'sp-mid' : 'sp-lo';
+}
+
+// Convenience helpers for updating DOM text and bar widths
+function setText(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+function setTextClass(id, val, cls) {
+  var el = document.getElementById(id);
+  if (el) { el.textContent = val; el.className = 'ds-card-change ' + (cls || ''); }
+}
+function setBar(barId, valId, score) {
+  var bar = document.getElementById(barId);
+  var val = document.getElementById(valId);
+  if (bar) bar.style.width = (score || 0) + '%';
+  if (val) val.textContent = score ? score + '%' : '—';
+}
+
+// Loads all dashboard data from the backend and populates every panel.
+// Only runs when the user is logged in.
 async function loadDashboard() {
   updateAuthUI();
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -675,9 +835,11 @@ async function loadDashboard() {
     if (!res || !res.dashboard) return;
     var d = res.dashboard;
 
+    // Overview stats
     var tot    = d.totalInterviews || (d.stats && d.stats.totalSessions) || 0;
     var avg    = (d.stats && d.stats.avgScore) || (d.weeklyScores && d.weeklyScores.length
-      ? Math.round(d.weeklyScores.reduce(function(s,w){return s+(w.score||0);},0)/d.weeklyScores.length) : 0);
+      ? Math.round(d.weeklyScores.reduce(function (s, w) { return s + (w.score || 0); }, 0) / d.weeklyScores.length)
+      : 0);
     var hrs    = (d.stats && d.stats.practiceHours) || 0;
     var streak = (d.stats && d.stats.streak) || 0;
     var inp    = d.inProgress || 0;
@@ -686,1355 +848,598 @@ async function loadDashboard() {
     setText('dsAvgScore', avg + '%');
     setText('dsPracticeHours', hrs + 'h');
     setText('dsStreak', streak);
-    setTextClass('dsInProgress', inp > 0 ? ('\u2191 ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
-    setTextClass('dsScoreChange', avg >= 70 ? '\u2191 Good performance' : '\u2197 Keep practicing', 'up');
+    setTextClass('dsInProgress', inp > 0 ? ('↑ ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
+    setTextClass('dsScoreChange', avg >= 70 ? '↑ Good performance' : '↗ Keep practicing', 'up');
     setTextClass('dsHoursChange', tot + ' total sessions', '');
 
+    // Score trend mini-chart
     if (d.weeklyScores && d.weeklyScores.length) {
       var bars = document.querySelectorAll('.mc-bar');
       var mc   = document.getElementById('mcEmpty');
       if (mc) mc.style.display = 'none';
       var scores = d.weeklyScores.slice(-10);
-      var mx = Math.max.apply(null, scores.map(function(s){return s.score||0;}).concat([1]));
-      bars.forEach(function(bar, i) {
+      var mx = Math.max.apply(null, scores.map(function (s) { return s.score || 0; }).concat([1]));
+      bars.forEach(function (bar, i) {
         var s = scores[i];
-        bar.style.height = s ? Math.max(8, Math.round((s.score/mx)*90))+'%' : '8%';
-        bar.title = s ? (s.score + '% - ' + relDate(s.date)) : '';
+        bar.style.height = s ? Math.max(8, Math.round((s.score / mx) * 90)) + '%' : '8%';
+        bar.title = s ? (s.score + '% — ' + relDate(s.date)) : '';
       });
     }
 
+    // Skill breakdown bars
     if (d.skillBreakdown) {
       var sb = d.skillBreakdown;
-      setBar('sbComm','sbCommVal', sb.communication);
-      setBar('sbTech','sbTechVal', sb.technical);
-      setBar('sbConf','sbConfVal', sb.confidence);
+      setBar('sbComm', 'sbCommVal', sb.communication);
+      setBar('sbTech', 'sbTechVal', sb.technical);
+      setBar('sbConf', 'sbConfVal', sb.confidence);
     }
 
     setText('dsBadge', d.totalInterviews || 0);
 
+    // Recent sessions table
     var tbody = document.getElementById('historyTbody');
     if (tbody) {
       if (d.recentInterviews && d.recentInterviews.length) {
-        tbody.innerHTML = d.recentInterviews.map(function(iv) {
+        tbody.innerHTML = d.recentInterviews.map(function (iv) {
           var score = (iv.feedback && iv.feedback.overallScore) || 0;
-          var type  = (iv.interviewType || 'mixed').replace(/-/g,' ');
+          var type  = (iv.interviewType || 'mixed').replace(/-/g, ' ');
           return '<tr>'
-            + '<td>' + _esc(iv.jobRole||'Interview') + '</td>'
-            + '<td>' + _esc(iv.company||'-') + '</td>'
+            + '<td>' + _esc(iv.jobRole || 'Interview') + '</td>'
+            + '<td>' + _esc(iv.company || '—') + '</td>'
             + '<td style="text-transform:capitalize">' + _esc(type) + '</td>'
             + '<td><span class="score-pill ' + scoreClass(score) + '">' + score + '%</span></td>'
             + '<td>' + relDate(iv.createdAt) + '</td>'
             + '</tr>';
         }).join('');
       } else {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet - start your first AI interview! \ud83d\ude80</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet — start your first AI interview! 🚀</td></tr>';
       }
     }
 
+    // AI recommendations panel
     if (d.recommendations && d.recommendations.length) {
       var panel = document.getElementById('recsPanel');
       var list  = document.getElementById('recsList');
       if (panel) panel.style.display = 'block';
-      if (list)  list.innerHTML = d.recommendations.map(function(r){ return '<li>' + _esc(r) + '</li>'; }).join('');
+      if (list)  list.innerHTML = d.recommendations.map(function (r) { return '<li>' + _esc(r) + '</li>'; }).join('');
     }
 
+    // Populate sub-panels
     loadSessionsPanel(d.recentInterviews || []);
     loadAnalyticsPanel(d);
     loadProgressPanel(d);
     loadCoachPanel(d.recommendations || [], d.skillBreakdown || {});
     loadSettingsPanel();
 
-  } catch(err) {
+  } catch (err) {
     console.warn('Dashboard load failed:', err && err.message);
   }
 }
 
-function setText(id, val) {
-  var el = document.getElementById(id);
-  if (el) el.textContent = val;
-}
-function setTextClass(id, val, cls) {
-  var el = document.getElementById(id);
-  if (el) { el.textContent = val; el.className = 'ds-card-change ' + (cls||''); }
-}
-function setBar(barId, valId, score) {
-  var bar = document.getElementById(barId);
-  var val = document.getElementById(valId);
-  if (bar) bar.style.width = (score||0) + '%';
-  if (val) val.textContent = score ? score + '%' : '-';
-}
-
-// sessions panel
+/* ── Sessions panel ── */
 function loadSessionsPanel(recent) {
   var el = document.getElementById('sessionsContent');
   if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) return;
+
   if (!recent.length) {
-    el.innerHTML = '<div class="empty-state"><div class="es-icon">\ud83c\udfa4</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
+    el.innerHTML = '<div class="empty-state"><div class="es-icon">🎤</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
     return;
   }
-  el.innerHTML = recent.map(function(iv) {
+
+  el.innerHTML = recent.map(function (iv) {
     var score = (iv.feedback && iv.feedback.overallScore) || 0;
     var col   = score >= 80 ? '#10b981' : score >= 65 ? '#6366f1' : '#f59e0b';
+    var type  = (iv.interviewType || 'mixed').replace(/-/g, ' ');
     return '<div class="session-card">'
-      + '<div><div class="sc-role">' + _esc(iv.jobRole||'Interview') + ' <span style="font-weight:400;color:var(--muted)">@ ' + _esc(iv.company||'-') + '</span></div>'
-      + '<div class="sc-meta"><span style="text-transform:capitalize">' + _esc((iv.interviewType||'mixed').replace(/-/g,' ')) + '</span>'
-      + '<span>' + (iv.durationMinutes ? iv.durationMinutes+'m' : '-') + '</span>'
-      + '<span>' + relDate(iv.createdAt) + '</span></div></div>'
+      + '<div><div class="sc-role">' + _esc(iv.jobRole || 'Interview') + '</div>'
+      + '<div class="sc-meta"><span>' + _esc(type) + '</span><span>' + _esc(iv.company || '—') + '</span></div></div>'
       + '<div><div class="sc-score" style="color:' + col + '">' + score + '%</div>'
-      + '<div class="sc-date">' + relDate(iv.createdAt) + '</div></div></div>';
+      + '<div class="sc-date">' + relDate(iv.createdAt) + '</div></div>'
+      + '</div>';
   }).join('');
 }
 
-// analytics panel
+/* ── Analytics panel ── */
 function loadAnalyticsPanel(d) {
   var el = document.getElementById('analyticsContent');
+  if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
-  if (!el || !loggedIn) return;
-  var dist       = d.typeDistribution || {};
-  var total      = Object.values(dist).reduce(function(a,b){return a+b;}, 0) || 1;
-  var typeColors = { mixed:'#6366f1', technical:'#06b6d4', hr:'#10b981' };
-  var typeRows   = Object.entries(dist).map(function(entry) {
-    var type = entry[0], count = entry[1];
-    return '<div class="type-bar-item">'
-      + '<div class="type-bar-label" style="text-transform:capitalize">' + _esc(type) + '</div>'
-      + '<div class="type-bar-track"><div class="type-bar-fill" style="width:' + Math.round(count/total*100) + '%;background:' + (typeColors[type]||'#6366f1') + '"></div></div>'
-      + '<div class="type-bar-count">' + count + '</div></div>';
-  }).join('') || '<div style="color:var(--dim);font-size:13px">No data yet</div>';
+  if (!loggedIn) return;
 
-  var scoreBars = (d.weeklyScores||[]).map(function(s) {
-    var h = Math.max(8, Math.round((s.score/100)*80));
-    return '<div style="flex:1;height:' + h + 'px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#6366f1,rgba(99,102,241,0.1));min-width:8px" title="' + s.score + '% - ' + relDate(s.date) + '"></div>';
-  }).join('') || '<div style="color:var(--dim);font-size:13px;align-self:center">Complete sessions to see trend</div>';
+  var sb = d.skillBreakdown || {};
+  var typeData = [
+    { label: 'Mixed',     count: d.mixedCount     || 0, color: '#6366f1' },
+    { label: 'HR',        count: d.hrCount         || 0, color: '#06b6d4' },
+    { label: 'Technical', count: d.technicalCount  || 0, color: '#10b981' },
+  ];
+  var maxCount = Math.max.apply(null, typeData.map(function (t) { return t.count; }).concat([1]));
 
-  var stats = d.stats || {};
   el.innerHTML = '<div class="analytics-grid">'
-    + '<div class="al-card"><div class="al-title">Session Summary</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
-    + _statBox(d.totalInterviews||0, 'Total Sessions', '#6366f1')
-    + _statBox((stats.avgScore||0)+'%', 'Avg Score', '#06b6d4')
-    + _statBox((stats.practiceHours||0)+'h', 'Practice Hours', '#10b981')
-    + _statBox(d.inProgress||0, 'In Progress', '#f59e0b')
+    + '<div class="al-card"><div class="al-title">Sessions by Type</div><div class="type-bars">'
+    + typeData.map(function (t) {
+        return '<div class="type-bar-item"><div class="type-bar-label">' + t.label + '</div>'
+          + '<div class="type-bar-track"><div class="type-bar-fill" style="width:' + Math.round((t.count / maxCount) * 100) + '%;background:' + t.color + '"></div></div>'
+          + '<div class="type-bar-count">' + t.count + '</div></div>';
+      }).join('')
     + '</div></div>'
-    + '<div class="al-card"><div class="al-title">Interview Types</div><div class="type-bars">' + typeRows + '</div></div>'
-    + '<div class="al-card" style="grid-column:1/-1"><div class="al-title">Score Trend (Last ' + (d.weeklyScores&&d.weeklyScores.length||0) + ' Sessions)</div>'
-    + '<div style="display:flex;align-items:flex-end;gap:6px;height:80px;margin-top:8px">' + scoreBars + '</div></div>'
-    + '</div>';
-}
-function _statBox(val, label, color) {
-  return '<div style="text-align:center;padding:16px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border)">'
-    + '<div style="font-family:Syne,sans-serif;font-size:28px;font-weight:800;color:' + color + '">' + val + '</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + label + '</div></div>';
+    + '<div class="al-card"><div class="al-title">Skill Averages</div><div class="type-bars">'
+    + [['Communication', sb.communication || 0, '#6366f1'], ['Technical', sb.technical || 0, '#06b6d4'], ['Confidence', sb.confidence || 0, '#10b981']].map(function (s) {
+        return '<div class="type-bar-item"><div class="type-bar-label">' + s[0] + '</div>'
+          + '<div class="type-bar-track"><div class="type-bar-fill" style="width:' + (s[1]) + '%;background:' + s[2] + '"></div></div>'
+          + '<div class="type-bar-count">' + s[1] + '%</div></div>';
+      }).join('')
+    + '</div></div></div>';
 }
 
-// progress panel
+/* ── Progress panel ── */
 function loadProgressPanel(d) {
   var el = document.getElementById('progressContent');
+  if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
-  if (!el || !loggedIn) return;
-  var sb    = d.skillBreakdown || {};
+  if (!loggedIn) return;
+
   var stats = d.stats || {};
-  var skillRows = Object.entries(sb).map(function(entry) {
-    var skill = entry[0], score = entry[1];
-    var col = score >= 80 ? '#10b981' : score >= 60 ? '#6366f1' : '#f59e0b';
-    return '<div>'
-      + '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">'
-      + '<span style="text-transform:capitalize;color:var(--muted)">' + _esc(skill) + '</span>'
-      + '<span style="color:' + col + ';font-weight:700;font-family:JetBrains Mono,monospace">' + score + '%</span></div>'
-      + '<div style="height:7px;background:rgba(255,255,255,0.07);border-radius:99px;overflow:hidden">'
-      + '<div style="height:100%;width:' + score + '%;border-radius:99px;background:linear-gradient(90deg,' + col + ',' + col + '88);transition:width 1s ease"></div>'
-      + '</div></div>';
-  }).join('') || '<div style="color:var(--dim);font-size:13px">Complete interviews to see skill breakdown</div>';
-
   el.innerHTML = '<div class="progress-grid">'
-    + '<div class="prog-card"><div class="prog-num" style="color:#6366f1">' + (d.totalInterviews||0) + '</div><div class="prog-label">Total Interviews</div></div>'
-    + '<div class="prog-card"><div class="prog-num" style="color:#06b6d4">' + (stats.avgScore||0) + '%</div><div class="prog-label">Average Score</div></div>'
-    + '<div class="prog-card"><div class="prog-num" style="color:#10b981">' + (stats.practiceHours||0) + 'h</div><div class="prog-label">Practice Hours</div></div>'
-    + '<div class="prog-card"><div class="prog-num" style="color:#f59e0b">' + (stats.streak||0) + '</div><div class="prog-label">Day Streak</div></div>'
-    + '</div>'
-    + '<div class="al-card" style="margin-top:14px"><div class="al-title">Skill Breakdown</div>'
-    + '<div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">' + skillRows + '</div></div>';
+    + _progCard(d.totalInterviews || 0, 'Total Sessions', '#6366f1')
+    + _progCard((stats.avgScore || 0) + '%', 'Average Score', '#06b6d4')
+    + _progCard((stats.practiceHours || 0) + 'h', 'Practice Hours', '#10b981')
+    + _progCard(stats.streak || 0, 'Day Streak 🔥', '#f59e0b')
+    + '</div>';
 }
 
-// coach panel
-function loadCoachPanel(recs, skillBreakdown) {
+function _progCard(val, label, color) {
+  return '<div class="prog-card"><div class="prog-num" style="color:' + color + '">' + val + '</div><div class="prog-label">' + label + '</div></div>';
+}
+
+/* ── AI Coach panel ── */
+function loadCoachPanel(recs, sb) {
   var el = document.getElementById('coachContent');
+  if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
-  if (!el || !loggedIn) return;
-  var entries    = Object.entries(skillBreakdown).sort(function(a,b){return a[1]-b[1];});
-  var weakSkill  = entries.length ? entries[0][0] : 'communication';
-  var recItems   = recs.map(function(r){
-    return '<div class="coach-rec"><div class="cr-cat">AI Recommendation</div><div class="cr-text">' + _esc(r) + '</div></div>';
-  }).join('') || '<div class="empty-state" style="padding:40px"><div class="es-icon">\ud83e\udd16</div><div class="es-title">Complete an interview</div><div class="es-sub">Your AI Coach recommendations will appear here</div></div>';
+  if (!loggedIn) return;
 
-  el.innerHTML = '<div style="margin-bottom:16px;padding:16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:var(--r)">'
-    + '<div style="font-size:12px;color:var(--primary);font-weight:700;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">Focus Area</div>'
-    + '<div style="font-size:16px;font-weight:600;text-transform:capitalize">' + _esc(weakSkill) + ' needs the most work</div></div>'
-    + '<div class="coach-recs">' + recItems + '</div>';
+  if (!recs.length) {
+    el.innerHTML = '<div class="empty-state"><div class="es-icon">🤖</div><div class="es-title">Complete more sessions</div><div class="es-sub">Your AI coach will generate personalized recommendations after a few interviews.</div></div>';
+    return;
+  }
+
+  var weakest = Object.entries(sb).sort(function (a, b) { return a[1] - b[1]; })[0];
+  var focusArea = weakest ? weakest[0] : 'overall performance';
+
+  el.innerHTML = '<div class="coach-recs">'
+    + '<div class="coach-rec"><div class="cr-cat">Focus Area</div><div class="cr-text">Based on your sessions, focus on improving your <strong>' + _esc(focusArea) + '</strong> score.</div></div>'
+    + recs.map(function (r) {
+        return '<div class="coach-rec"><div class="cr-cat">Recommendation</div><div class="cr-text">' + _esc(r) + '</div></div>';
+      }).join('')
+    + '</div>';
 }
 
-// settings panel
+/* ── Settings panel ── */
 function loadSettingsPanel() {
   var el = document.getElementById('settingsContent');
   if (!el) return;
+  var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+  if (!loggedIn) return;
+
   var user = (typeof getUser === 'function') ? getUser() : null;
   if (!user) return;
-  var plan = user.plan || 'free';
-  plan = plan.charAt(0).toUpperCase() + plan.slice(1);
+
   el.innerHTML = '<div class="settings-form">'
-    + _sfField('Full Name', user.name || '')
-    + _sfField('Email', user.email || '')
-    + _sfField('College / University', user.college || 'Not set')
-    + _sfField('Target Role', user.targetRole || 'Not set')
-    + _sfField('Plan', plan)
-    + '<div style="padding-top:8px;border-top:1px solid var(--border);display:flex;gap:12px">'
-    + '<button class="btn-primary-sm" onclick="showToast(\'Profile editing coming soon!\',\'info\')">Edit Profile</button>'
-    + '<button class="btn-ghost" onclick="handleLogout()" style="font-size:13px">Sign Out</button>'
-    + '</div></div>';
-}
-function _sfField(label, val) {
-  return '<div class="sf-field"><div class="sf-label">' + _esc(label) + '</div><input class="sf-input" value="' + _esc(val) + '" readonly></div>';
+    + '<div class="sf-field"><div class="sf-label">Full Name</div><input class="sf-input" value="' + _esc(user.name || '') + '" readonly /></div>'
+    + '<div class="sf-field"><div class="sf-label">Email</div><input class="sf-input" value="' + _esc(user.email || '') + '" readonly /></div>'
+    + '<div class="sf-field"><div class="sf-label">Plan</div><input class="sf-input" value="' + _esc(user.plan || 'Free') + '" readonly /></div>'
+    + '</div>';
 }
 
-// logout
-window.handleLogout = function() {
-  if (typeof clearAuth === 'function') clearAuth();
-  updateAuthUI();
-  showToast('Signed out successfully.', 'info');
-  ['dsTotalSessions','dsAvgScore','dsPracticeHours','dsStreak'].forEach(function(id) { setText(id,'-'); });
-  var tbody = document.getElementById('historyTbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Sign in to see your interview history \ud83d\udd12</td></tr>';
-  ['sessionsContent','analyticsContent','progressContent','coachContent'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="empty-state"><div class="es-icon">\ud83d\udd12</div><div class="es-title">Sign in to view</div></div>';
-  });
-  var sc = document.getElementById('settingsContent');
-  if (sc) sc.innerHTML = '<div class="empty-state"><div class="es-icon">\u2699\ufe0f</div><div class="es-title">Sign in to manage settings</div></div>';
-};
+/* ════════════════════════════════════
+   VOICE INTERVIEW ENGINE
+════════════════════════════════════ */
 
-// -- DASHBOARD TABS --
-function switchDashTab(section) {
-  document.querySelectorAll('.ds-item').forEach(function(i) { i.classList.toggle('active', i.dataset.section === section); });
-  document.querySelectorAll('.dash-panel').forEach(function(p) { p.classList.toggle('active', p.id === 'panel-' + section); });
-  document.querySelectorAll('.dash-tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tab === section); });
-}
-window.switchDashTab = switchDashTab;
-
-function _initDashTabs() {
-  document.querySelectorAll('.ds-item').forEach(function(item) {
-    item.addEventListener('click', function() { switchDashTab(this.dataset.section); });
-  });
-  document.querySelectorAll('.dash-tab').forEach(function(tab) {
-    tab.addEventListener('click', function() { switchDashTab(this.dataset.tab); });
-  });
-}
-
-// -- HERO STATS --
-async function loadHeroStats() {
-  try {
-    if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') return;
-    var health = await MockAI.apiHealth();
-    if (health) {
-      var uc = document.getElementById('heroUserCount');
-      var st = document.getElementById('sessionsToday');
-      if (uc) uc.textContent = (1247).toLocaleString();
-      if (st) st.textContent = '94';
-    }
-  } catch(e) { /* hero stats are cosmetic, fail silently */ }
-}
-
-// -- EMAIL VERIFICATION --
-async function handleEmailVerification() {
-  try {
-    var params = new URLSearchParams(window.location.search);
-    var token  = params.get('token');
-    if (!token) return;
-    if (typeof MockAI === 'undefined' || typeof MockAI.authVerifyEmail !== 'function') return;
-    var data = await MockAI.authVerifyEmail(token);
-    updateAuthUI();
-    showToast((data && data.message) || 'Email verified! You can now sign in.', 'success');
-    window.history.replaceState({}, '', '#dashboard');
-  } catch(err) {
-    showToast(err && err.message ? err.message : 'Verification failed.', 'error');
-  }
-}
-
-function wireButtons() {
-  var navSignIn = document.getElementById('navSignIn');
-  if (navSignIn) navSignIn.addEventListener('click', function() { openAuthModal('login'); });
-
-  var navGet = document.getElementById('navGetStarted');
-  if (navGet) navGet.addEventListener('click', function() { openAuthModal('register'); });
-
-  var mobGet = document.getElementById('mobileGetStarted');
-  if (mobGet) mobGet.addEventListener('click', function() { openAuthModal('register'); });
-
-  var heroStart = document.getElementById('heroStart');
-  if (heroStart) {
-    heroStart.addEventListener('click', function() {
-      var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
-      if (loggedIn) {
-        var panel = document.getElementById('ai-panel');
-        if (panel) panel.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        openAuthModal('register');
-      }
-    });
-  }
-
-  var ctaStart = document.getElementById('ctaStart');
-  if (ctaStart) ctaStart.addEventListener('click', function() { openAuthModal('register'); });
-
-  var sessSignIn = document.getElementById('sessionsSignIn');
-  if (sessSignIn) sessSignIn.addEventListener('click', function() { openAuthModal('login'); });
-
-  var uploadBtn = document.getElementById('uploadResumeBtn');
-  if (uploadBtn) uploadBtn.addEventListener('click', function() {
-    handleResumeUpload('resumeFile', 'uploadResumeBtn', 'resumeResult', '.how-resume-panel .role-chips');
-  });
-
-  var dashBtn = document.getElementById('dashAnalyzeBtn');
-  if (dashBtn) dashBtn.addEventListener('click', function() {
-    handleResumeUpload('dashResumeFile', 'dashAnalyzeBtn', 'dashResumeResult', '#dashRoleChips');
-  });
-}
-
-// -- VOICE INTERVIEW ENGINE --
-
-// TTS warmup on first user interaction (required by browsers)
-var _ttsWarmedUp = false;
-function VE_warmupTTS() {
-  if (_ttsWarmedUp || !window.speechSynthesis) return;
-  _ttsWarmedUp = true;
-  try {
-    var u = new SpeechSynthesisUtterance('');
-    u.volume = 0;
-    window.speechSynthesis.speak(u);
-  } catch(e) {}
-}
-['click','touchstart','keydown'].forEach(function(ev) {
-  document.addEventListener(ev, VE_warmupTTS, { once: true, passive: true });
-});
-
-// Chrome pauses synthesis after ~15s on hidden tabs, this keeps it alive
-var _synthPinger = null;
-function VE_startSynthPinger() {
-  VE_stopSynthPinger();
-  _synthPinger = setInterval(function() {
-    if (window.speechSynthesis && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
-  }, 5000);
-}
-function VE_stopSynthPinger() {
-  clearInterval(_synthPinger);
-  _synthPinger = null;
-}
-
-// Resume synthesis if user switches back to this tab
-document.addEventListener('visibilitychange', function() {
-  if (!document.hidden && window.speechSynthesis && window.speechSynthesis.paused) {
-    window.speechSynthesis.resume();
-  }
-});
-
-function VE_isMobileDevice() {
-  var ua = navigator.userAgent || '';
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
-    (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 900);
-}
-
-function VE_getMicConstraints() {
-  return {
-    audio: {
-      echoCancellation: { ideal: true },
-      noiseSuppression: { ideal: true },
-      autoGainControl: { ideal: true },
-      channelCount: { ideal: 1 },
-    },
-  };
-}
-
-async function VE_getMicStream() {
-  try {
-    return await navigator.mediaDevices.getUserMedia(VE_getMicConstraints());
-  } catch(e) {
-    return navigator.mediaDevices.getUserMedia({ audio: true });
-  }
-}
-
-// VE state
+// Voice interview state
 var VE = {
-  active:       false,
-  sessionId:    null,
-  mode:         'mixed',
-  synth:        window.speechSynthesis || null,
-  rec:          null,
-  phase:        'idle',
-  isStarting:   false,
-  finalText:    '',
-  interimText:  '',
-  lastHeardText: '',
-  mobileSubmitTimer: null,
-  listenRunId:  0,
-  detectedLang: 'en-US',
-  userLanguage: 'english',
-  femaleVoiceEN: null,
-  femaleVoiceTE: null,
-  silenceTimer:   null,
-  silenceDelay:   2000,
-  ttsWatchdog:    null,
-  audioCtx:       null,
-  analyser:       null,
-  micStream:      null,
-  vadRunning:     false,
-  bargeInitInFlight: false,
-  loudFrames:     0,
-  isMobile:       VE_isMobileDevice(),
-  ttsStartedAt:   0,
-  lastBargeAt:    0,
-  BARGE_THRESHOLD: 1.4,
-  BARGE_MOBILE_THRESHOLD: 2.8,
-  BARGE_FRAMES:    10,
-  BARGE_MOBILE_FRAMES: 8,
-  BARGE_GRACE_MS: 900,
-  BARGE_MOBILE_GRACE_MS: 1200,
-  BARGE_COOLDOWN_MS: 900,
-  ttsRunId:        0,
-  ttsHardTimer:    null,
+  interviewId:   null,       // backend interview session ID
+  recognition:   null,       // SpeechRecognition instance
+  synthesis:     window.speechSynthesis || null,
+  isListening:   false,
+  isSpeaking:    false,
+  silenceTimer:  null,
+  silenceDelay:  3000,       // ms of silence before auto-submitting answer
+  currentAnswer: '',         // accumulated transcript for current question
+  langMode:      'en-IN',    // default language (auto-switches on Telugu detection)
+  teluguWords:   ['నమస్కారం','మీరు','నేను','ఏమి','అవును','కాదు','చేస్తాను','చేశాను','అని','కానీ'],
 };
 
-// Voice picker - scores voices by quality, prefers natural/neural female voices
-function VE_getVoiceList() {
-  return VE.synth ? (VE.synth.getVoices() || []) : [];
+// Opens the voice modal and shows the permission/intro screen
+function startVoiceInterview() {
+  var modal = document.getElementById('voiceModal');
+  if (modal) modal.classList.add('open');
 }
+window.startVoiceInterview = startVoiceInterview;
 
-function VE_voiceLangMatches(voice, lang) {
-  if (!voice || !voice.lang) return false;
-  var voiceLang = voice.lang.toLowerCase();
-  var desired = (lang || '').toLowerCase();
-  var base = desired.split('-')[0];
+// Closes the voice modal and cleans up all resources
+function closeVoiceModal() {
+  VE_stopListening();
+  if (VE.synthesis) VE.synthesis.cancel();
+  if (VE.interviewId) {
+    // Complete the interview session on the backend (fire-and-forget)
+    if (typeof interviewComplete === 'function') {
+      interviewComplete(VE.interviewId, 0).catch(function () {});
+    }
+    VE.interviewId = null;
+  }
+  var modal = document.getElementById('voiceModal');
+  if (modal) modal.classList.remove('open');
 
-  return voiceLang === desired || voiceLang === base || voiceLang.indexOf(base + '-') === 0;
+  // Reset to permission screen for next time
+  var perm = document.getElementById('vScreenPermission');
+  var intv = document.getElementById('vScreenInterview');
+  if (perm) perm.style.display = '';
+  if (intv) intv.style.display = 'none';
+
+  VE_setAvatarState('idle');
 }
+window.closeVoiceModal = closeVoiceModal;
 
-function VE_scoreVoice(voice, lang) {
-  if (!voice || !VE_voiceLangMatches(voice, lang)) return -Infinity;
+/* ── Avatar state management ── */
+// state: 'idle' | 'speaking' | 'listening' | 'thinking'
+function VE_setAvatarState(state) {
+  var wrap   = document.getElementById('vaiWrap');
+  var status = document.getElementById('vaiStatus');
+  if (!wrap) return;
 
-  var name = (voice.name || '').toLowerCase();
-  var uri = (voice.voiceURI || '').toLowerCase();
-  var voiceLang = (voice.lang || '').toLowerCase();
-  var desired = (lang || '').toLowerCase();
-  var base = desired.split('-')[0];
-  var haystack = name + ' ' + uri;
-  var score = 0;
+  wrap.classList.remove('speaking', 'listening', 'thinking');
+  if (state !== 'idle') wrap.classList.add(state);
 
-  if (voiceLang === desired) score += 35;
-  else if (voiceLang.indexOf(base + '-') === 0) score += 18;
-
-  if (/google.*(us|uk).*english|google.*english/.test(haystack)) score += 90;
-  if (/microsoft.*(aria|jenny|ava|emma|natural|neural|online)/.test(haystack)) score += 85;
-  if (/natural|neural|premium|enhanced|online/.test(haystack)) score += 40;
-  if (/samantha|karen|moira|zira|jenny|aria|ava|emma|allison|tessa|fiona|lekha|neerja/.test(haystack)) score += 35;
-  if (/female|woman/.test(haystack)) score += 15;
-  if (voice.default) score += 6;
-  if (voice.localService === false) score += 8;
-
-  if (/david|mark|fred|alex|daniel|george|\bmale\b|compact|espeak|robot|basic/.test(haystack)) score -= 35;
-
-  return score;
-}
-
-function VE_pickBestVoice(lang) {
-  var voices = VE_getVoiceList().filter(function(voice) {
-    return VE_voiceLangMatches(voice, lang);
-  });
-
-  if (!voices.length) return null;
-
-  voices.sort(function(a, b) {
-    return VE_scoreVoice(b, lang) - VE_scoreVoice(a, lang);
-  });
-  return voices[0];
-}
-
-function VE_pickVoices() {
-  if (!VE.synth) return;
-  VE.femaleVoiceEN = VE_pickBestVoice('en-US') || VE_pickBestVoice('en-GB') || VE_pickBestVoice('en');
-  VE.femaleVoiceTE = VE_pickBestVoice('te-IN') || VE_pickBestVoice('te') || VE.femaleVoiceEN;
-}
-
-function VE_getVoiceForLang(lang) {
-  return lang === 'te-IN' ? VE.femaleVoiceTE : VE.femaleVoiceEN;
-}
-
-function VE_getVoiceProfile(lang) {
-  return {
-    rate: lang === 'te-IN' ? 0.9 : (VE.isMobile ? 0.93 : 0.95),
-    pitch: 1.0,
-    volume: 1.0,
+  var labels = {
+    idle:      'Ready',
+    speaking:  'Priya is speaking…',
+    listening: 'Listening to you…',
+    thinking:  'Thinking…'
   };
+  if (status) status.textContent = labels[state] || '';
 }
 
-function VE_getBargeThreshold() {
-  return VE.isMobile ? VE.BARGE_MOBILE_THRESHOLD : VE.BARGE_THRESHOLD;
-}
-
-function VE_getBargeFrames() {
-  return VE.isMobile ? VE.BARGE_MOBILE_FRAMES : VE.BARGE_FRAMES;
-}
-
-function VE_getBargeGraceMs() {
-  return VE.isMobile ? VE.BARGE_MOBILE_GRACE_MS : VE.BARGE_GRACE_MS;
-}
-
-if (VE.synth) {
-  VE_pickVoices();
-  VE.synth.onvoiceschanged = VE_pickVoices;
-}
-
-// TTS - speaks text in chunks, handles Chrome quirks, retries with default voice on failure
-function VE_speak(rawText, onDone) {
-  if (!rawText || !rawText.trim()) { if (onDone) onDone(); return; }
-  if (!VE.synth || typeof SpeechSynthesisUtterance === 'undefined') { if (onDone) onDone(); return; }
-
-  var text = rawText
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/[*_`#\[\]]/g, '')
-    .replace(/\n+/g, ' ')
-    .trim();
-
-  VE_pickVoices();
-  var chunks = VE_splitText(text);
-  if (!chunks.length) { if (onDone) onDone(); return; }
-
-  var idx = 0;
-  var done = false;
-  var runId = ++VE.ttsRunId;
-
-  VE_setPhase('speaking');
-  VE_showSpeechBox(rawText);
-  VE.ttsStartedAt = Date.now();
-  VE_startBargeMonitor();
-  VE_startSynthPinger();
-
-  // Hard 60s timeout in case TTS hangs completely
-  clearTimeout(VE.ttsHardTimer);
-  VE.ttsHardTimer = setTimeout(function() {
-    if (runId !== VE.ttsRunId || !VE.active || VE.phase !== 'speaking') return;
-    VE_synthStop();
-    VE_setPhase('listening');
-    VE_setStatus(VE_STATUS.listening);
-    VE_doListen();
-  }, 60000);
-
-  function finish(callDone) {
-    if (done || runId !== VE.ttsRunId) return;
-    done = true;
-    clearTimeout(VE.ttsWatchdog);
-    clearTimeout(VE.ttsHardTimer);
-    VE_stopSynthPinger();
-    if (callDone && onDone) onDone();
-  }
-
-  function prepareAndStart() {
-    if (VE.synth.paused) {
-      try { VE.synth.resume(); } catch(e) {}
-    }
-
-    if (VE.synth.speaking || VE.synth.pending) {
-      try { VE.synth.cancel(); } catch(e) {}
-      setTimeout(function() {
-        if (runId === VE.ttsRunId && VE.active) speakChunk(false);
-      }, 90);
-      return;
-    }
-
-    speakChunk(false);
-  }
-
-  function speakChunk(forceDefaultVoice) {
-    clearTimeout(VE.ttsWatchdog);
-
-    if (done || runId !== VE.ttsRunId || !VE.active) return finish(false);
-    if (idx >= chunks.length) return finish(true);
-
-    var chunk = chunks[idx];
-    var lang = VE.detectedLang === 'te-IN' ? 'te-IN' : 'en-US';
-    var voice = forceDefaultVoice ? null : VE_getVoiceForLang(lang);
-    var utt = new SpeechSynthesisUtterance(chunk);
-    var started = false;
-    var startWatchdog = null;
-
-    var voiceProfile = VE_getVoiceProfile(lang);
-    if (voice) utt.voice = voice;
-    utt.lang = lang;
-    utt.rate = voiceProfile.rate;
-    utt.volume = voiceProfile.volume;
-    utt.pitch = voiceProfile.pitch;
-
-    function clearChunkTimers() {
-      clearTimeout(startWatchdog);
-      clearTimeout(VE.ttsWatchdog);
-    }
-
-    utt.onstart = function() {
-      started = true;
-      VE.ttsStartedAt = Date.now();
-    };
-
-    utt.onend = function() {
-      clearChunkTimers();
-      if (runId !== VE.ttsRunId || done) return;
-      idx++;
-      speakChunk(false);
-    };
-
-    utt.onerror = function(e) {
-      clearChunkTimers();
-      if (runId !== VE.ttsRunId || done) return;
-      if (e && (e.error === 'interrupted' || e.error === 'canceled')) return;
-      if (!forceDefaultVoice) return speakChunk(true);
-      idx++;
-      speakChunk(false);
-    };
-
-    // If onstart never fires after a few seconds, retry with default voice
-    startWatchdog = setTimeout(function() {
-      if (
-        started ||
-        (VE.synth && (VE.synth.speaking || VE.synth.pending)) ||
-        runId !== VE.ttsRunId ||
-        done ||
-        !VE.active ||
-        VE.phase !== 'speaking'
-      ) return;
-      try { VE.synth.cancel(); } catch(e) {}
-      if (!forceDefaultVoice) {
-        setTimeout(function() {
-          if (runId === VE.ttsRunId && VE.active) speakChunk(true);
-        }, 90);
-      } else {
-        idx++;
-        speakChunk(false);
-      }
-    }, VE.isMobile ? 4500 : 2500);
-
-    // Periodic pause/resume to unstick Chrome on long chunks
-    VE.ttsWatchdog = setTimeout(function() {
-      if (runId !== VE.ttsRunId || done || !VE.synth || !VE.synth.speaking) return;
-      try {
-        VE.synth.pause();
-        VE.synth.resume();
-      } catch(e) {}
-    }, Math.max(10000, chunk.length * 120 + 3000));
-
-    try {
-      if (VE.synth.paused) VE.synth.resume();
-      VE.ttsStartedAt = Date.now();
-      VE.synth.speak(utt);
-    } catch(e) {
-      clearChunkTimers();
-      if (!forceDefaultVoice) return speakChunk(true);
-      idx++;
-      speakChunk(false);
-    }
-  }
-
-  prepareAndStart();
-}
-
-function VE_synthStop() {
-  clearTimeout(VE.ttsWatchdog);
-  clearTimeout(VE.ttsHardTimer);
-  VE_stopSynthPinger();
-  VE.ttsRunId++;
-
-  if (!VE.synth) return;
-  try {
-    if (VE.synth.paused) VE.synth.resume();
-    if (VE.synth.speaking || VE.synth.pending) VE.synth.cancel();
-  } catch(e) {}
-}
-
-function VE_splitText(text) {
-  var clean = (text || '').replace(/\s+/g, ' ').trim();
-  var raw = clean.match(/[^.!?;:]+[.!?;:]*/g) || [clean];
-  var out = [], buf = '';
-
-  raw.forEach(function(s) {
-    var next = (buf ? buf + ' ' : '') + s.trim();
-    if (next.length > 180 && buf) {
-      out.push(buf.trim());
-      buf = s.trim();
-    } else {
-      buf = next;
-    }
-  });
-
-  if (buf.trim()) out.push(buf.trim());
-  return out.filter(Boolean);
-}
-
-// Barge-in via RMS volume detection
-async function VE_prepareMobileBargeIn() {
-  if (VE.bargeInitInFlight || VE.analyser || !VE.active || VE.phase !== 'speaking') return;
-  VE.bargeInitInFlight = true;
-  var stream = null;
-
-  try {
-    stream = await VE_getMicStream();
-    if (!VE.active || VE.phase !== 'speaking') {
-      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
-      return;
-    }
-
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) {
-      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
-      return;
-    }
-
-    VE.micStream = stream;
-    stream = null;
-    VE.audioCtx = new AC();
-    if (VE.audioCtx.state === 'suspended') {
-      try { await VE.audioCtx.resume(); } catch(e) {}
-    }
-
-    var source = VE.audioCtx.createMediaStreamSource(VE.micStream);
-    VE.analyser = VE.audioCtx.createAnalyser();
-    VE.analyser.fftSize = 1024;
-    source.connect(VE.analyser);
-  } catch(e) {
-    if (stream) {
-      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch(_) {}
-    }
-  } finally {
-    VE.bargeInitInFlight = false;
-  }
-
-  if (VE.analyser && VE.active && VE.phase === 'speaking') VE_startBargeMonitor();
-}
-
-function VE_startBargeMonitor() {
-  if (VE.vadRunning) return;
-  if (!VE.analyser) {
-    if (VE.isMobile && VE.active && VE.phase === 'speaking') VE_prepareMobileBargeIn();
+/* ── Text-to-speech: Priya speaks a question ── */
+function VE_speak(text, onDone) {
+  if (!VE.synthesis) {
+    if (onDone) onDone();
     return;
   }
 
-  VE.vadRunning = true;
-  VE.loudFrames = 0;
+  VE.synthesis.cancel();
+  VE_setAvatarState('speaking');
+  VE.isSpeaking = true;
 
-  var bufLen  = VE.analyser.fftSize;
-  var timeBuf = new Float32Array(bufLen);
+  // Show the text in the speech bubble with a typewriter effect
+  VE_typewriterEffect(text, document.getElementById('vaiSpeechText'));
 
-  function frame() {
-    if (!VE.vadRunning || !VE.analyser) return;
-    if (!VE.active) { VE.vadRunning = false; return; }
+  var utter = new SpeechSynthesisUtterance(text);
+  utter.lang  = 'en-IN';
+  utter.rate  = 0.92;
+  utter.pitch = 1.05;
 
-    if (VE.phase === 'speaking') {
-      VE.analyser.getFloatTimeDomainData(timeBuf);
-      var sum = 0;
-      for (var i = 0; i < bufLen; i++) sum += timeBuf[i] * timeBuf[i];
-      var rms = Math.sqrt(sum / bufLen) * 100;
-      var now = Date.now();
-      var inGrace = now - VE.ttsStartedAt < VE_getBargeGraceMs();
-      var inCooldown = now - VE.lastBargeAt < VE.BARGE_COOLDOWN_MS;
-      var ttsActive = VE.synth && (VE.synth.speaking || VE.synth.pending);
+  // Pick a female voice if available
+  var voices = VE.synthesis.getVoices();
+  var femaleVoice = voices.find(function (v) {
+    return v.lang.startsWith('en') && /female|woman|zira|samantha|victoria/i.test(v.name);
+  });
+  if (femaleVoice) utter.voice = femaleVoice;
 
-      if (inGrace || inCooldown || !ttsActive) {
-        VE.loudFrames = 0;
-      } else if (rms > VE_getBargeThreshold()) {
-        VE.loudFrames++;
-      } else {
-        VE.loudFrames = Math.max(0, VE.loudFrames - 2);
-      }
+  utter.onend = function () {
+    VE.isSpeaking = false;
+    VE_setAvatarState('listening');
+    if (onDone) onDone();
+  };
+  utter.onerror = function () {
+    VE.isSpeaking = false;
+    if (onDone) onDone();
+  };
 
-      if (VE.loudFrames >= VE_getBargeFrames()) {
-        VE.loudFrames = 0;
-        VE_handleBargeIn();
-        return;
-      }
+  VE.synthesis.speak(utter);
+}
+
+/* ── Typewriter effect for the speech bubble ── */
+function VE_typewriterEffect(text, el) {
+  if (!el) return;
+  el.textContent = '';
+  var i = 0;
+  var interval = setInterval(function () {
+    if (i < text.length) {
+      el.textContent += text[i++];
     } else {
-      VE.loudFrames = 0;
+      clearInterval(interval);
     }
-
-    requestAnimationFrame(frame);
-  }
-  frame();
+  }, 28);
 }
 
-function VE_handleBargeIn() {
-  var now = Date.now();
-  if (now - VE.ttsStartedAt < VE_getBargeGraceMs()) return;
-  if (now - VE.lastBargeAt < VE.BARGE_COOLDOWN_MS) return;
-  VE.lastBargeAt = now;
-
-  VE_synthStop();
-  VE_releaseBargeMic();
-
-  VE.finalText = '';
-  VE.interimText = '';
-  VE.lastHeardText = '';
-
-  VE_setPhase('listening');
-  VE_setStatus(VE_STATUS.listening);
-
-  try {
-    VE.rec?.abort();
-  } catch(e){}
-
-  setTimeout(() => {
-    VE_doListen();
-  }, 100);
-}
-
-// Speech recognition
-function VE_destroyRec() {
-  if (!VE.rec) return;
-  VE.rec.onresult = null;
-  VE.rec.onerror  = null;
-  VE.rec.onend    = null;
-  VE.rec.onstart  = null;
-  VE.rec.onspeechend = null;
-  VE.rec.onsoundend  = null;
-  try { VE.rec.abort(); } catch(e) {}
-  VE.rec = null;
-}
-
-function VE_cleanHeardText(text) {
-  return (text || '').replace(/\s+/g, ' ').trim();
-}
-
-// Accumulates transcript across recognition restarts
-function VE_rememberHeardText(text) {
-  text = VE_cleanHeardText(text);
-  if (!text) return VE_cleanHeardText(VE.lastHeardText);
-
-  var prev = VE_cleanHeardText(VE.lastHeardText);
-  var prevLower = prev.toLowerCase();
-  var textLower = text.toLowerCase();
-
-  if (!prev || textLower.indexOf(prevLower) !== -1) {
-    VE.lastHeardText = text;
-  } else if (prevLower.indexOf(textLower) === -1) {
-    VE.lastHeardText = VE_cleanHeardText(prev + ' ' + text);
-  }
-
-  return VE_cleanHeardText(VE.lastHeardText);
-}
-
-function VE_getHeardText() {
-  var finalText = VE_cleanHeardText(VE.finalText);
-  var interimText = VE_cleanHeardText(VE.interimText);
-  var heard = '';
-
-  if (finalText && interimText && interimText.toLowerCase().indexOf(finalText.toLowerCase()) !== 0) {
-    heard = VE_cleanHeardText(finalText + ' ' + interimText);
-  } else {
-    heard = finalText || interimText;
-  }
-
-  return heard || VE_cleanHeardText(VE.lastHeardText);
-}
-
-function VE_clearListenTimers() {
-  clearTimeout(VE.silenceTimer);
-  clearTimeout(VE.mobileSubmitTimer);
-  VE.silenceTimer = null;
-  VE.mobileSubmitTimer = null;
-}
-
-function VE_releaseBargeMic() {
-  try { if (VE.audioCtx) VE.audioCtx.close(); } catch(e) {}
-  if (VE.micStream) {
-    try { VE.micStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
-  }
-  VE.audioCtx = null;
-  VE.analyser = null;
-  VE.micStream = null;
-  VE.vadRunning = false;
-  VE.bargeInitInFlight = false;
-  VE.loudFrames = 0;
-}
-
-function VE_scheduleSubmitFromSpeech(listenRunId, delay) {
-  clearTimeout(VE.mobileSubmitTimer);
-  VE.mobileSubmitTimer = setTimeout(function() {
-    var bestText = VE_getHeardText();
-    if (listenRunId === VE.listenRunId && VE.phase === 'listening' && bestText && VE.active) {
-      VE_clearListenTimers();
-      VE_submitAnswer(bestText);
-    }
-  }, delay);
-}
-
-function VE_restartListen(delay) {
-  if (!VE.active || VE.phase !== 'listening') return;
-  setTimeout(function() {
-    if (VE.active && VE.phase === 'listening') VE_doListen();
-  }, delay);
-}
-
-function VE_createRecognition() {
-  VE_destroyRec();
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return null;
-
-  var listenRunId = VE.listenRunId;
-  var rec = new SR();
-  rec.continuous = false;
-  rec.interimResults  = true;
-  rec.maxAlternatives = 1;
-  rec.lang            = VE.detectedLang;
-
-  rec.onstart = function() {
-    if (listenRunId !== VE.listenRunId) return;
-    VE.isStarting = false;
-  };
-
-  rec.onresult = function(e) {
-    if (listenRunId !== VE.listenRunId || VE.phase !== 'listening') return;
-
-    var finalParts = [];
-    var interimParts = [];
-
-    for (var i = 0; i < e.results.length; i++) {
-      var t = (e.results[i][0].transcript || '').trim();
-      if (!t) continue;
-      if (e.results[i].isFinal) finalParts.push(t);
-      else interimParts.push(t);
-    }
-
-    VE.finalText = finalParts.join(' ').trim();
-    VE.interimText = interimParts.join(' ').trim();
-
-    var heard = VE_rememberHeardText(VE_getHeardText());
-    VE_showTranscript(heard);
-
-    if (heard) {
-      var lang = VE_detectLang(heard);
-      if (lang && lang !== VE.detectedLang) {
-        VE.detectedLang  = lang;
-        VE.userLanguage  = lang === 'te-IN' ? 'telugu' : 'english';
-        VE_updateLangBadge();
-      }
-    }
-
-    VE_clearListenTimers();
-    if (heard) {
-      VE.silenceTimer = setTimeout(function() {
-        var bestText = VE_getHeardText();
-        if (listenRunId === VE.listenRunId && VE.phase === 'listening' && bestText && VE.active) {
-          VE_clearListenTimers();
-          VE_submitAnswer(bestText);
-        }
-      }, VE.isMobile ? 1200 : VE.silenceDelay);
-
-      if (VE.isMobile) {
-        VE_scheduleSubmitFromSpeech(listenRunId, 700);
-        if (VE.finalText.trim()) {
-          try { rec.stop(); } catch(e){}
-        }
-      }
-    }
-  };
-
-  rec.onspeechend = function() {
-    if (listenRunId !== VE.listenRunId || !VE.isMobile) return;
-    if (VE.phase === 'listening' && VE_getHeardText() && VE.active) {
-      VE_scheduleSubmitFromSpeech(listenRunId, 250);
-    }
-  };
-
-  rec.onsoundend = function() {
-    if (listenRunId !== VE.listenRunId || !VE.isMobile) return;
-    if (VE.phase === 'listening' && VE_getHeardText() && VE.active) {
-      VE_scheduleSubmitFromSpeech(listenRunId, 350);
-    }
-  };
-
-  rec.onerror = function(e) {
-    if (listenRunId !== VE.listenRunId) return;
-    VE.isStarting = false;
-    if (e.error === 'aborted') return;
-    if (e.error === 'no-speech') {
-      var noSpeechText = VE_getHeardText();
-      if (noSpeechText) {
-        VE_clearListenTimers();
-        VE_submitAnswer(noSpeechText);
-      } else {
-        VE_restartListen(VE.isMobile ? 650 : 250);
-      }
-      return;
-    }
-    if (e.error === 'not-allowed') { showToast('Microphone permission denied.', 'error'); return; }
-    if (VE.phase === 'listening' && VE.active) {
-      VE_setStatus('Reconnecting...');
-      VE_restartListen(VE.isMobile ? 900 : 600);
-    }
-  };
-
-  rec.onend = function() {
-    if (listenRunId !== VE.listenRunId) return;
-    VE.isStarting = false;
-    var heard = VE_getHeardText();
-    if (VE.phase === 'listening' && heard && VE.active) {
-      VE_clearListenTimers();
-      VE_submitAnswer(heard);
-      return;
-    }
-    if (VE.phase === 'listening' && VE.active) {
-      VE_restartListen(VE.isMobile ? 650 : 200);
-    }
-  };
-
-  return rec;
-}
-
-function VE_doListen() {
-  if (!VE.active || VE.isStarting || VE.phase === 'processing') return;
-  VE.isStarting  = true;
-  VE.listenRunId++;
-  VE.finalText   = '';
-  VE.interimText = '';
-  VE.lastHeardText = '';
-  VE_clearListenTimers();
-  if (VE.isMobile) VE_releaseBargeMic();
-
-  VE.rec = VE_createRecognition();
-  if (!VE.rec) {
-    showToast('Voice input needs Chrome or Edge browser.', 'warning');
-    VE.isStarting = false;
+/* ── Speech recognition: listen for user's answer ── */
+function VE_startListening() {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast('Speech recognition not supported in this browser. Please type your answer.', 'warning');
     return;
   }
 
-  VE_setPhase('listening');
-  VE_setStatus(VE_STATUS.listening);
-  VE_showTranscript('');
-
-  try {
-    VE.rec.lang = VE.detectedLang;
-    VE.rec.start();
-  } catch(e) {
-    VE.isStarting = false;
-    VE_restartListen(VE.isMobile ? 700 : 400);
+  if (VE.recognition) {
+    try { VE.recognition.stop(); } catch (e) {}
   }
+
+  VE.recognition = new SpeechRecognition();
+  VE.recognition.continuous     = true;
+  VE.recognition.interimResults = true;
+  VE.recognition.lang           = VE.langMode;
+  VE.currentAnswer              = '';
+
+  VE.recognition.onstart = function () {
+    VE.isListening = true;
+    VE_setAvatarState('listening');
+  };
+
+  VE.recognition.onresult = function (event) {
+    var finalText = '';
+    var interimText = '';
+
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalText += transcript + ' ';
+      } else {
+        interimText += transcript;
+      }
+    }
+
+    if (finalText) {
+      VE.currentAnswer += finalText;
+      // Auto-detect Telugu and switch language indicator
+      var istelugu = VE.teluguWords.some(function (w) { return finalText.includes(w); });
+      if (istelugu) {
+        VE.langMode = 'te-IN';
+        var li = document.getElementById('vLangIndicator');
+        if (li) li.textContent = '🇮🇳 Telugu';
+        var lv = document.getElementById('vLangVal');
+        if (lv) lv.textContent = 'Telugu';
+      }
+    }
+
+    // Show the running transcript (final only, no interim clutter)
+    var transcript = document.getElementById('vuserTranscript');
+    if (transcript) transcript.textContent = VE.currentAnswer + interimText;
+
+    // Reset silence timer on every speech event
+    clearTimeout(VE.silenceTimer);
+    VE.silenceTimer = setTimeout(function () {
+      if (VE.currentAnswer.trim()) VE_submitAnswer(VE.currentAnswer.trim());
+    }, VE.silenceDelay);
+  };
+
+  VE.recognition.onerror = function (e) {
+    if (e.error !== 'no-speech') {
+      console.warn('[Voice] Recognition error:', e.error);
+    }
+  };
+
+  VE.recognition.onend = function () {
+    VE.isListening = false;
+    // Auto-restart if we're still in the interview and not speaking
+    if (!VE.isSpeaking && VE.interviewId) {
+      setTimeout(VE_startListening, 300);
+    }
+  };
+
+  try { VE.recognition.start(); }
+  catch (e) { console.warn('[Voice] Could not start recognition:', e); }
 }
 
 function VE_stopListening() {
-  VE_clearListenTimers();
-  VE.isStarting = false;
-  try { if (VE.rec) VE.rec.stop(); } catch(e) {
-    try { if (VE.rec) VE.rec.abort(); } catch(_) {}
+  clearTimeout(VE.silenceTimer);
+  if (VE.recognition) {
+    try { VE.recognition.stop(); } catch (e) {}
+    VE.recognition = null;
   }
+  VE.isListening = false;
 }
 
-// Language detection - Telugu script + common Telugu words + switch commands
-function VE_detectLang(text) {
-  var teChar = (text.match(/[\u0C00-\u0C7F]/g)||[]).length;
-  if (teChar > 1) return 'te-IN';
-  if (/\b(nenu|meeru|idi|adi|cheppandi|telugu|ante|avunu|kaadu|neeku|mana|undi|ledu)\b/i.test(text)) return 'te-IN';
-  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41/i.test(text)) return 'te-IN';
-  if (/switch.*english|in english|back.*english/i.test(text)) return 'en-US';
-  return null;
-}
-
-function VE_updateLangBadge() {
-  var el   = document.getElementById('vLangIndicator');
-  var isTE = VE.detectedLang === 'te-IN';
-  if (el) { el.textContent = isTE ? '\ud83c\uddee\ud83c\uddf3 \u0c24\u0c46\u0c32\u0c41\u0c17\u0c41' : '\ud83c\uddec\ud83c\udde7 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
-}
-
-// Phase & UI state
-var VE_STATUS = {
-  speaking:   '\u263a\ufe0f Priya is speaking...',
-  listening:  '\ud83c\udfa4 Listening - speak now',
-  processing: '\u29f3 Processing your answer...',
-  idle:       'Ready',
-};
-
-function VE_setPhase(phase) {
-  VE.phase = phase;
-  var wrap = document.getElementById('vaiWrap');
-  if (wrap) {
-    wrap.classList.remove('speaking','listening','thinking');
-    if (phase !== 'idle') wrap.classList.add(phase === 'processing' ? 'thinking' : phase);
-  }
-  var mainAva  = document.getElementById('mainAiAva');
-  var mainRing = document.getElementById('mainAiRing');
-  if (mainAva)  mainAva.classList.toggle('speaking',  phase === 'speaking');
-  if (mainRing) mainRing.classList.toggle('speaking', phase === 'speaking');
-}
-
-function VE_setStatus(msg) {
-  var el = document.getElementById('vaiStatus');
-  if (el) el.textContent = msg;
-}
-
-function VE_showSpeechBox(text) {
-  var el = document.getElementById('vaiSpeechText');
-  if (!el) return;
-  var clean = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/[*_`#]/g, '');
-  el.textContent = '';
-  var i = 0;
-  var speed = Math.max(10, Math.min(20, 1500 / Math.max(clean.length, 1)));
-  var t = setInterval(function() {
-    el.textContent += clean[i++];
-    if (i >= clean.length) clearInterval(t);
-  }, speed);
-}
-
-function VE_showTranscript(text) {
-  var el = document.getElementById('vuserTranscript');
-  if (el) el.textContent = text;
-}
-
-// Submit answer to interview API and speak response
-async function VE_submitAnswer(text) {
-  if (!text || !text.trim() || VE.phase === 'processing') return;
-  if (text.trim().length < 2) { VE_doListen(); return; }
-
-  VE_setPhase('processing');
+/* ── Submit a voice answer to the backend AI ── */
+async function VE_submitAnswer(answer) {
+  if (!answer || !VE.interviewId) return;
   VE_stopListening();
-  VE_setStatus(VE_STATUS.processing);
-  VE_showTranscript('"' + text + '"');
-  addAIMsg(text, true);
+  VE_setAvatarState('thinking');
 
-  var box = document.getElementById('vaiSpeechText');
-  if (box) box.innerHTML = '<span style="opacity:.5;font-style:italic">Thinking...</span>';
+  // Show what the user said in the transcript box
+  var transcript = document.getElementById('vuserTranscript');
+  if (transcript) transcript.textContent = answer;
+  VE.currentAnswer = '';
 
   try {
-    if (/telugu|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41\u0c32\u0c4b|\u0c2e\u0c3e\u0c1f\u0c4d\u0c32\u0c3e\u0c21\u0c41|matladu/i.test(text)) {
-      VE.detectedLang = 'te-IN'; VE.userLanguage = 'telugu'; VE_updateLangBadge();
+    var data = await interviewMessage(VE.interviewId, answer);
+
+    // Update voice score displays
+    if (data.feedback) {
+      var f = data.feedback;
+      var setVScore = function (id, val) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = val ? val + '%' : '—';
+      };
+      setVScore('vConfVal', f.confidenceScore);
+      setVScore('vCommVal', f.communicationScore);
+      setVScore('vTechVal', f.technicalScore);
     }
-    var langPrefix = VE.userLanguage === 'telugu' ? '[LANGUAGE=telugu] ' : '[LANGUAGE=english] ';
-    var isQuestion = /\?|what|why|how|when|where|who|can you|could you|explain|tell me/i.test(text);
-    var finalMsg   = (isQuestion ? '[USER_QUESTION] ' : '') + langPrefix + text;
 
-    if (typeof interviewMessage !== 'function') throw new Error('Interview service not ready.');
-    var data = await interviewMessage(VE.sessionId, finalMsg);
-
-    if (data.feedback) { VE_updateScores(data.feedback); updateFeedback(data.feedback); }
+    // Priya speaks the AI's response, then starts listening again
     if (data.aiMessage) {
-      addAIMsg(data.aiMessage, false);
-      var aiLang = VE_detectLang(data.aiMessage);
-      if (aiLang && aiLang !== VE.detectedLang) { VE.detectedLang = aiLang; VE_updateLangBadge(); }
-      VE_setStatus(VE_STATUS.speaking);
-      VE_speak(data.aiMessage, function() {
-        if (VE.active) { VE_setStatus(VE_STATUS.listening); VE_doListen(); }
+      VE_speak(data.aiMessage, function () {
+        VE_startListening();
       });
+    } else {
+      VE_startListening();
     }
-  } catch(err) {
-    showToast('AI error - listening again.', 'error');
-    VE_setPhase('idle');
-    VE_setStatus('Error - trying again...');
-    if (box) box.textContent = '';
-    setTimeout(function() { if (VE.active) VE_doListen(); }, 1500);
+  } catch (err) {
+    showToast('AI response error: ' + (err.message || 'Try again'), 'error');
+    VE_setAvatarState('listening');
+    VE_startListening();
   }
 }
 
-function VE_updateScores(fb) {
-  [['vConfVal', fb.confidenceScore],['vCommVal', fb.communicationScore],['vTechVal', fb.technicalScore]].forEach(function(pair) {
-    var el = document.getElementById(pair[0]);
-    var s  = pair[1];
-    if (!el) return;
-    el.textContent = s != null ? s + '%' : '-';
-    el.style.color = s >= 80 ? '#10b981' : s >= 60 ? '#6366f1' : '#f59e0b';
+/* ── Grant mic permission and start the voice interview ── */
+async function VE_grantAndStart() {
+  var btn = document.getElementById('vGrantMicBtn');
+  setLoading(btn, true);
+
+  try {
+    // Request microphone permission
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    setLoading(btn, false);
+    showToast('Microphone access denied. Please allow mic access and try again.', 'error');
+    return;
+  }
+
+  // Check login
+  var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+  if (!loggedIn) {
+    setLoading(btn, false);
+    closeVoiceModal();
+    openAuthModal('login');
+    showToast('Sign in to start a voice interview.', 'info');
+    return;
+  }
+
+  try {
+    // Start a new interview session on the backend
+    var started = await interviewStart('Software Engineer', 'General', 'mixed', 'intermediate');
+    VE.interviewId = started.interview._id;
+  } catch (err) {
+    setLoading(btn, false);
+    showToast('Could not start interview: ' + (err.message || 'Server error'), 'error');
+    return;
+  }
+
+  setLoading(btn, false);
+
+  // Switch from permission screen to active interview screen
+  var perm = document.getElementById('vScreenPermission');
+  var intv = document.getElementById('vScreenInterview');
+  if (perm) perm.style.display = 'none';
+  if (intv) intv.style.display = '';
+
+  // Priya introduces herself and asks the first question
+  var intro = "Hello! I'm Priya, your AI interview coach. Let's begin. Tell me about yourself and your background.";
+  VE_speak(intro, function () {
+    VE_startListening();
   });
 }
 
-// Open voice modal
-window.startVoiceInterview = function() {
-  var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
-  if (!loggedIn) { openAuthModal('login'); showToast('Sign in to use Voice Interview.', 'info'); return; }
-  VE.active = false; VE.sessionId = null;
-  VE.mode = aiMode; VE.detectedLang = 'en-US'; VE.userLanguage = 'english'; VE.loudFrames = 0;
-  VE_updateLangBadge();
-  var modal = document.getElementById('voiceModal');
-  if (modal) modal.classList.add('open');
-  document.body.style.overflow = 'hidden';
-  var perm = document.getElementById('vScreenPermission');
-  var intr = document.getElementById('vScreenInterview');
-  if (perm) perm.style.display = 'flex';
-  if (intr) intr.style.display = 'none';
-  VE_warmupTTS();
-};
-
-// Grant mic permission and start
+/* ── Wire up the voice modal buttons ── */
 function _initVoiceModal() {
   var grantBtn = document.getElementById('vGrantMicBtn');
-  if (grantBtn) {
-    grantBtn.addEventListener('click', async function() {
-      setLoading(grantBtn, true);
-      try {
-        var stream = await VE_getMicStream();
-        await VE_initBargeIn(stream);
-        var perm = document.getElementById('vScreenPermission');
-        var intr = document.getElementById('vScreenInterview');
-        if (perm) perm.style.display = 'none';
-        if (intr) intr.style.display = 'flex';
-        VE.active = true;
-        await VE_beginSession();
-      } catch(err) {
-        showToast('Microphone denied. Enable it in browser settings.', 'error');
-      } finally {
-        setLoading(grantBtn, false);
-      }
-    });
-  }
+  if (grantBtn) grantBtn.addEventListener('click', VE_grantAndStart);
 
-  var vtypeSend  = document.getElementById('vtypeSend');
+  // Typed answer fallback — user can type if mic doesn't work
   var vtypeInput = document.getElementById('vtypeInput');
-  if (vtypeSend)  vtypeSend.addEventListener('click', VE_typeSubmit);
-  if (vtypeInput) vtypeInput.addEventListener('keydown', function(e) { if (e.key==='Enter'){e.preventDefault();VE_typeSubmit();} });
-}
+  var vtypeSend  = document.getElementById('vtypeSend');
 
-async function VE_initBargeIn(existingStream) {
-  try {
-    if (VE.isMobile) {
-      if (existingStream) {
-        try { existingStream.getTracks().forEach(function(t){ t.stop(); }); } catch(e) {}
-      }
-      VE_releaseBargeMic();
-      return;
-    }
-
-    VE.micStream = existingStream || await VE_getMicStream();
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    VE.audioCtx = new AC();
-    if (VE.audioCtx.state === 'suspended') {
-      try { await VE.audioCtx.resume(); } catch(e) {}
-    }
-    var source  = VE.audioCtx.createMediaStreamSource(VE.micStream);
-    VE.analyser = VE.audioCtx.createAnalyser();
-    VE.analyser.fftSize = 1024;
-    source.connect(VE.analyser);
-  } catch(e) {}
-}
-
-async function VE_beginSession() {
-  VE_setPhase('processing');
-  VE_setStatus('Connecting to Priya...');
-  var box = document.getElementById('vaiSpeechText');
-  if (box) box.textContent = '';
-  VE_showTranscript('');
-  VE_startBargeMonitor();
-
-  try {
-    if (typeof interviewStart !== 'function') throw new Error('Interview service not ready.');
-    var started = await interviewStart('Software Engineer', 'General', VE.mode, 'intermediate');
-    VE.sessionId  = started.interview._id;
-    aiInterviewId = VE.sessionId;
-
-    var firstMsg = started.interview && started.interview.messages && started.interview.messages.find(function(m){return m.role==='ai';});
-    var opener   = (firstMsg && firstMsg.content) || VE_getOpener();
-    // Trim opener at a sentence boundary so it doesn't cut mid-word
-    if (opener.length > 250) {
-      var trimmed = opener.substring(0, 250);
-      var lastPunct = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
-      opener = lastPunct > 100 ? trimmed.substring(0, lastPunct+1) : trimmed + '...';
-    }
-
-    addAIMsg(opener, false);
-    VE_setStatus(VE_STATUS.speaking);
-    VE_speak(opener, function() {
-      if (VE.active) { VE_setStatus(VE_STATUS.listening); VE_doListen(); }
-    });
-  } catch(err) {
-    showToast('Could not start interview: ' + (err && err.message), 'error');
-    VE_setPhase('idle');
-    VE_setStatus('Connection failed. Please try again.');
-    if (box) box.textContent = 'Could not connect. Please close and try again.';
+  function submitTyped() {
+    var val = vtypeInput && vtypeInput.value.trim();
+    if (!val) return;
+    if (vtypeInput) vtypeInput.value = '';
+    VE_submitAnswer(val);
   }
+
+  if (vtypeSend)  vtypeSend.addEventListener('click', submitTyped);
+  if (vtypeInput) vtypeInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitTyped(); }
+  });
 }
 
-function VE_getOpener() {
-  var openers = {
-    mixed:     "Hi! I'm Priya, your interview coach. We'll cover behavioral and technical questions. Let's start - tell me about yourself and the role you're preparing for.",
-    hr:        "Hi! I'm Priya. We're focusing on behavioral questions using the STAR method. Let's begin - tell me about a time you showed strong leadership under pressure.",
-    technical: "Hi! I'm Priya. We're diving into technical questions today. First problem: given an array of integers, how would you find two numbers that sum to a target value?",
-  };
-  return openers[VE.mode] || openers.mixed;
+/* ════════════════════════════════════
+   DASHBOARD TAB WIRING
+════════════════════════════════════ */
+
+// Wires click handlers to all dashboard top tabs and sidebar items.
+// Must run after DOMContentLoaded so the elements exist.
+function _initDashboardTabs() {
+  document.querySelectorAll('.dash-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      switchDashTab(tab.dataset.tab);
+    });
+  });
+
+  document.querySelectorAll('.ds-item').forEach(function (item) {
+    item.addEventListener('click', function () {
+      switchDashTab(item.dataset.section);
+    });
+  });
 }
 
-function VE_typeSubmit() {
-  var inp = document.getElementById('vtypeInput');
-  var txt = inp && inp.value.trim();
-  if (!txt || !VE.active) return;
-  inp.value = '';
-  VE_stopListening();
-  VE.finalText = txt;
-  VE.lastHeardText = txt;
-  VE_submitAnswer(txt);
-}
+/* ════════════════════════════════════
+   DOM READY — WIRE EVERYTHING UP
+════════════════════════════════════ */
 
-// Close modal - full teardown: stops speech, kills mic, closes AudioContext
-window.closeVoiceModal = function() {
-  VE.active = false;
+document.addEventListener('DOMContentLoaded', function () {
 
-  VE_synthStop();
+  // Core UI
+  _initScrollReveal();
+  _initNav();
+  _initSmoothScroll();
+  _initResumeChips();
+  _initAuthModal();
+  _initAIPanel();
+  _initVoiceModal();
+  _initDashboardTabs();
 
-  VE_clearListenTimers();
-  VE.isStarting = false;
-  VE_destroyRec();
+  // Reflect login state in the nav and dashboard header
+  updateAuthUI();
 
-  VE.vadRunning = false;
-  VE.loudFrames = 0;
+  // If already logged in (e.g. page refresh), load dashboard data immediately
+  var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+  if (loggedIn) loadDashboard();
 
-  VE_releaseBargeMic();
+  // ── CTA buttons → open register modal ──
+  // All "Get Started" buttons across the page open the register tab
+  ['navGetStarted', 'heroStart', 'ctaStart', 'mobileGetStarted'].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', function () { openAuthModal('register'); });
+  });
 
-  VE.sessionId    = null;
-  VE.finalText    = '';
-  VE.interimText  = '';
-  VE.lastHeardText = '';
-  VE.listenRunId++;
-  VE.detectedLang = 'en-US';
-  VE.userLanguage = 'english';
-  VE.phase        = 'idle';
-  VE.ttsStartedAt = 0;
-  VE.lastBargeAt  = 0;
+  // ── Sign In button in sessions panel ──
+  var ssi = document.getElementById('sessionsSignIn');
+  if (ssi) ssi.addEventListener('click', function () { openAuthModal('login'); });
 
-  VE_setPhase('idle');
-  VE_setStatus('');
-  var box = document.getElementById('vaiSpeechText');
-  if (box) box.textContent = '';
-  VE_showTranscript('');
-  var grantBtn = document.getElementById('vGrantMicBtn');
-  if (grantBtn) setLoading(grantBtn, false);
+  // ── Landing page resume upload button ──
+  var uploadBtn = document.getElementById('uploadResumeBtn');
+  if (uploadBtn) {
+    uploadBtn.addEventListener('click', function () {
+      handleResumeUpload('resumeFile', 'uploadResumeBtn', 'resumeResult', '.how-resume-panel .role-chips');
+    });
+  }
 
-  var modal = document.getElementById('voiceModal');
-  if (modal) modal.classList.remove('open');
-  document.body.style.overflow = '';
-};
+  // ── Dashboard resume upload button ──
+  var dashBtn = document.getElementById('dashAnalyzeBtn');
+  if (dashBtn) {
+    dashBtn.addEventListener('click', function () {
+      handleResumeUpload('dashResumeFile', 'dashAnalyzeBtn', 'dashResumeResult', '#dashRoleChips');
+    });
+  }
 
-// -- APP INIT --
-// Single init point, guarded against double-run
-function _appInit() {
-  if (_appInit._done) return;
-  _appInit._done = true;
+  // ── Email verification link in URL ──
+  // Handles the ?token=xxx link from the verification email
+  var urlParams = new URLSearchParams(window.location.search);
+  var verifyToken = urlParams.get('token');
+  if (verifyToken && typeof authVerifyEmail === 'function') {
+    authVerifyEmail(verifyToken)
+      .then(function () {
+        showToast('Email verified! You are now logged in.', 'success');
+        updateAuthUI();
+        loadDashboard();
+        // Clean the token from the URL without reloading
+        window.history.replaceState({}, '', window.location.pathname);
+      })
+      .catch(function (err) {
+        showToast('Verification failed: ' + (err.message || 'Invalid token'), 'error');
+      });
+  }
 
-  try { _initNav();           } catch(e) { console.warn('Nav init failed:', e); }
-  try { _initSmoothScroll();  } catch(e) { console.warn('Scroll init failed:', e); }
-  try { _initScrollReveal();  } catch(e) { console.warn('Reveal init failed:', e); }
-  try { _initResumeChips();   } catch(e) { console.warn('Resume chips failed:', e); }
-  try { _initAuthModal();     } catch(e) { console.warn('Auth modal failed:', e); }
-  try { _initAIPanel();       } catch(e) { console.warn('AI panel failed:', e); }
-  try { _initDashTabs();      } catch(e) { console.warn('Dash tabs failed:', e); }
-  try { _initVoiceModal();    } catch(e) { console.warn('Voice modal failed:', e); }
-  try { wireButtons();        } catch(e) { console.warn('Wire buttons failed:', e); }
-  try { updateAuthUI();       } catch(e) { console.warn('Auth UI failed:', e); }
-  try { loadDashboard();      } catch(e) { console.warn('Dashboard failed:', e); }
-  try { loadHeroStats();      } catch(e) { console.warn('Hero stats failed:', e); }
-  try { handleEmailVerification(); } catch(e) { console.warn('Email verify failed:', e); }
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', _appInit);
-} else {
-  _appInit();
-}
+});
+/* ── End of MockAI script.js ── */
