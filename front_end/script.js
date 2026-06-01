@@ -1020,11 +1020,7 @@ async function handleEmailVerification() {
   }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   18. WIRE BUTTONS
-   BUG FIX: Was called twice (DOMContentLoaded + readyState check).
-   Now only called once from DOMContentLoaded.
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
 function wireButtons() {
   var navSignIn = document.getElementById('navSignIn');
   if (navSignIn) navSignIn.addEventListener('click', function() { openAuthModal('login'); });
@@ -1065,25 +1061,10 @@ function wireButtons() {
   });
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   VOICE INTERVIEW ENGINE v5 â€” Chrome-Hardened, Mobile-Safe
-   
-   All fixes:
-   âœ… TTS warmup on first user gesture (Chrome requires this)
-   âœ… Chrome TTS keepalive pinger every 5s (prevents silent death)
-   âœ… Per-chunk TTS watchdog (nudges if Chrome stalls mid-utterance)
-   âœ… Page visibility handler (resumes TTS if tab was backgrounded)
-   âœ… Fresh SR instance every listen cycle (no stale SR bug)
-   âœ… SR mutex lock (isStarting) prevents double-start
-   âœ… Barge-in uses RMS over PCM (not avg freq bin) â€” accurate loudness
-   âœ… 35 consecutive loud frames before barge-in (background noise rejected)
-   âœ… silenceDelay set correctly on VE object (was undefined before)
-   âœ… Mic stream tracks stopped on close (mic indicator goes off)
-   âœ… AudioContext closed on modal close (no memory leak)
-   âœ… VAD monitor only runs during 'speaking' phase
-   âœ… Graceful degradation on browsers without SpeechRecognition
-================================================================ */
 
+   //VOICE INTERVIEW ENGINE v5 â€” Chrome-Hardened, Mobile-Safe
+   
+   
 /* â”€â”€â”€ TTS Warmup â”€â”€â”€ */
 var _ttsWarmedUp = false;
 function VE_warmupTTS() {
@@ -1146,9 +1127,7 @@ async function VE_getMicStream() {
   }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   VE STATE
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* //  VE STATE */
 var VE = {
   active:       false,
   sessionId:    null,
@@ -1278,9 +1257,8 @@ if (VE.synth) {
   VE.synth.onvoiceschanged = VE_pickVoices;
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   TTS
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+//  TTS
+
 function VE_speak(rawText, onDone) {
   if (!rawText || !rawText.trim()) { if (onDone) onDone(); return; }
   if (!VE.synth || typeof SpeechSynthesisUtterance === 'undefined') { if (onDone) onDone(); return; }
@@ -1460,9 +1438,7 @@ function VE_splitText(text) {
   return out.filter(Boolean);
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   BARGE-IN VAD (RMS-based)
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+//  BARGE-IN VAD (RMS-based)
 async function VE_prepareMobileBargeIn() {
   if (VE.bargeInitInFlight || VE.analyser || !VE.active || VE.phase !== 'speaking') return;
   VE.bargeInitInFlight = true;
@@ -1671,7 +1647,7 @@ function VE_createRecognition() {
 
   var listenRunId = VE.listenRunId;
   var rec = new SR();
-  rec.continuous      = VE.isMobile ? true : false;
+  rec.continuous = false;
   rec.interimResults  = true;  // prevents Chrome silently dropping finals
   rec.maxAlternatives = 1;
   rec.lang            = VE.detectedLang;
@@ -1717,9 +1693,18 @@ function VE_createRecognition() {
           VE_clearListenTimers();
           VE_submitAnswer(bestText);
         }
-      }, VE.isMobile ? 1200 : VE.silenceDelay);
+      }, VE.isMobile ? 700 : VE.silenceDelay);
 
-      if (VE.isMobile) VE_scheduleSubmitFromSpeech(listenRunId, 900);
+  if (VE.isMobile) {
+
+  VE_scheduleSubmitFromSpeech(listenRunId, 500);
+
+  if (VE.finalText.trim()) {
+    try {
+      rec.stop();
+    } catch(e){}
+  }
+}
     }
   };
 
@@ -1813,9 +1798,7 @@ function VE_stopListening() {
   }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   LANGUAGE DETECTION
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+ //  LANGUAGE DETECTION
 function VE_detectLang(text) {
   var teChar = (text.match(/[\u0C00-\u0C7F]/g)||[]).length;
   if (teChar > 1) return 'te-IN';
@@ -1830,9 +1813,9 @@ function VE_updateLangBadge() {
   if (el) { el.textContent = isTE ? 'ðŸ‡®ðŸ‡³ à°¤à±†à°²à±à°—à±' : 'ðŸ‡¬ðŸ‡§ English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   PHASE & UI
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+ //  PHASE & UI
+
 var VE_STATUS = {
   speaking:   'â–¶ Priya is speaking...',
   listening:  'ðŸŽ¤ Listening â€” speak now',
@@ -1876,9 +1859,8 @@ function VE_showTranscript(text) {
   if (el) el.textContent = text;
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   SUBMIT ANSWER
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+ //  SUBMIT ANSWER
+
 async function VE_submitAnswer(text) {
   if (!text || !text.trim() || VE.phase === 'processing') return;
   if (text.trim().length < 2) { VE_doListen(); return; }
