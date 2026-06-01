@@ -1035,64 +1035,21 @@ function loadSettingsPanel() {
 
 /* ════════════════════════════════════
    VOICE INTERVIEW ENGINE
-   State machine + VAD + Barge-in
 ════════════════════════════════════ */
 
-// ── Platform helpers ──
-function _isAndroid() {
-  return /android/i.test(navigator.userAgent);
-}
-function _isiOS() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-}
-function _isMobile() {
-  return _isAndroid() || _isiOS() || navigator.maxTouchPoints > 1;
-}
-
-// Voice interview state — single source of truth
+// Voice interview state
 var VE = {
   interviewId:   null,       // backend interview session ID
-  recognition:   null,       // primary SpeechRecognition instance
-  bargeRecog:    null,       // barge-in detector (runs during TTS)
+  recognition:   null,       // SpeechRecognition instance
   synthesis:     window.speechSynthesis || null,
-  currentUtter:  null,       // current SpeechSynthesisUtterance
-  typewriterId:  null,       // typewriter interval ID (for clearing on barge-in)
-
-  // ── State machine ──
-  // Valid states: 'idle' | 'listening' | 'processing' | 'speaking'
-  state:         'idle',
-
-  // ── Timers ──
-  silenceTimer:  null,       // fires after 600ms of silence (VAD)
-  inactivityTimer: null,     // fires after 3s of no speech at all
-  absoluteTimer: null,       // fires after 15s max listening
-
-  // ── Config ──
-  SILENCE_MS:    600,        // VAD silence threshold after final speech
-  INACTIVITY_MS: 3000,       // no-speech timeout
-  ABSOLUTE_MS:   15000,      // max listening per question
-
+  isListening:   false,
+  isSpeaking:    false,
+  silenceTimer:  null,
+  silenceDelay:  3000,       // ms of silence before auto-submitting answer
   currentAnswer: '',         // accumulated transcript for current question
   langMode:      'en-IN',    // default language (auto-switches on Telugu detection)
   teluguWords:   ['నమస్కారం','మీరు','నేను','ఏమి','అవును','కాదు','చేస్తాను','చేశాను','అని','కానీ'],
 };
-
-/* ── State machine transition ── */
-function VE_setState(newState) {
-  var valid = {
-    idle:       ['listening', 'speaking'],
-    listening:  ['processing', 'idle', 'speaking'],
-    processing: ['speaking', 'listening', 'idle'],
-    speaking:   ['listening', 'idle', 'processing'],
-  };
-  var allowed = valid[VE.state];
-  if (!allowed || allowed.indexOf(newState) === -1) {
-    console.warn('[Voice] Invalid transition:', VE.state, '→', newState);
-    return false;
-  }
-  VE.state = newState;
-  return true;
-}
 
 // Opens the voice modal and shows the permission/intro screen
 function startVoiceInterview() {
@@ -1104,9 +1061,7 @@ window.startVoiceInterview = startVoiceInterview;
 // Closes the voice modal and cleans up all resources
 function closeVoiceModal() {
   VE_stopListening();
-  VE_stopBargeIn();
   if (VE.synthesis) VE.synthesis.cancel();
-  if (VE.typewriterId) { clearInterval(VE.typewriterId); VE.typewriterId = null; }
   if (VE.interviewId) {
     // Complete the interview session on the backend (fire-and-forget)
     if (typeof interviewComplete === 'function') {
@@ -1123,21 +1078,19 @@ function closeVoiceModal() {
   if (perm) perm.style.display = '';
   if (intv) intv.style.display = 'none';
 
-  VE.state = 'idle';
   VE_setAvatarState('idle');
-  VE_hideBargeInIndicator();
 }
 window.closeVoiceModal = closeVoiceModal;
 
 /* ── Avatar state management ── */
-// visual: 'idle' | 'speaking' | 'listening' | 'thinking'
-function VE_setAvatarState(visual) {
+// state: 'idle' | 'speaking' | 'listening' | 'thinking'
+function VE_setAvatarState(state) {
   var wrap   = document.getElementById('vaiWrap');
   var status = document.getElementById('vaiStatus');
   if (!wrap) return;
 
   wrap.classList.remove('speaking', 'listening', 'thinking');
-  if (visual !== 'idle') wrap.classList.add(visual);
+  if (state !== 'idle') wrap.classList.add(state);
 
   var labels = {
     idle:      'Ready',
@@ -1145,17 +1098,7 @@ function VE_setAvatarState(visual) {
     listening: 'Listening to you…',
     thinking:  'Thinking…'
   };
-  if (status) status.textContent = labels[visual] || '';
-}
-
-/* ── Barge-in visual indicator ── */
-function VE_showBargeInIndicator() {
-  var el = document.getElementById('bargeInIndicator');
-  if (el) el.classList.add('active');
-}
-function VE_hideBargeInIndicator() {
-  var el = document.getElementById('bargeInIndicator');
-  if (el) el.classList.remove('active');
+  if (status) status.textContent = labels[state] || '';
 }
 
 /* ── Text-to-speech: Priya speaks a question ── */
@@ -1166,11 +1109,8 @@ function VE_speak(text, onDone) {
   }
 
   VE.synthesis.cancel();
-  if (!VE_setState('speaking')) {
-    // Force state if we're in an unexpected state (e.g. coming from idle on first question)
-    VE.state = 'speaking';
-  }
   VE_setAvatarState('speaking');
+  VE.isSpeaking = true;
 
   // Show the text in the speech bubble with a typewriter effect
   VE_typewriterEffect(text, document.getElementById('vaiSpeechText'));
@@ -1179,7 +1119,6 @@ function VE_speak(text, onDone) {
   utter.lang  = 'en-IN';
   utter.rate  = 0.92;
   utter.pitch = 1.05;
-  VE.currentUtter = utter;
 
   // Pick a female voice if available
   var voices = VE.synthesis.getVoices();
@@ -1188,127 +1127,34 @@ function VE_speak(text, onDone) {
   });
   if (femaleVoice) utter.voice = femaleVoice;
 
-  var speechDone = false;
-  function handleSpeechEnd() {
-    if (speechDone) return;
-    speechDone = true;
-    VE.currentUtter = null;
-    VE_stopBargeIn();
-    // Only transition if we're still in speaking state (not barged-in)
-    if (VE.state === 'speaking') {
-      if (onDone) onDone();
-    }
-  }
-
-  utter.onend   = handleSpeechEnd;
-  utter.onerror = handleSpeechEnd;
+  utter.onend = function () {
+    VE.isSpeaking = false;
+    VE_setAvatarState('listening');
+    if (onDone) onDone();
+  };
+  utter.onerror = function () {
+    VE.isSpeaking = false;
+    if (onDone) onDone();
+  };
 
   VE.synthesis.speak(utter);
-
-  // Start barge-in detector while Priya speaks
-  VE_startBargeIn(function (bargeFragment) {
-    // User interrupted! Cancel TTS immediately
-    speechDone = true;
-    VE.synthesis.cancel();
-    VE.currentUtter = null;
-    if (VE.typewriterId) { clearInterval(VE.typewriterId); VE.typewriterId = null; }
-
-    VE_showBargeInIndicator();
-    setTimeout(VE_hideBargeInIndicator, 1200);
-
-    // Transition to listening and seed the answer with what was detected
-    VE.state = 'listening'; // force because we cancelled speaking
-    VE_setAvatarState('listening');
-    VE.currentAnswer = bargeFragment + ' ';
-
-    var transcript = document.getElementById('vuserTranscript');
-    if (transcript) transcript.textContent = VE.currentAnswer;
-
-    // Now start full listening to capture the rest of the user's answer
-    VE_startListening();
-  });
 }
 
 /* ── Typewriter effect for the speech bubble ── */
 function VE_typewriterEffect(text, el) {
   if (!el) return;
-  if (VE.typewriterId) { clearInterval(VE.typewriterId); VE.typewriterId = null; }
   el.textContent = '';
   var i = 0;
-  VE.typewriterId = setInterval(function () {
+  var interval = setInterval(function () {
     if (i < text.length) {
       el.textContent += text[i++];
     } else {
-      clearInterval(VE.typewriterId);
-      VE.typewriterId = null;
+      clearInterval(interval);
     }
   }, 28);
 }
 
-/* ══════════════════════════════════
-   BARGE-IN DETECTOR
-   Lightweight listener during TTS
-══════════════════════════════════ */
-function VE_startBargeIn(onBargeIn) {
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return;
-
-  VE_stopBargeIn();
-
-  try {
-    var recog = new SR();
-    recog.continuous     = false;
-    recog.interimResults = true;
-    recog.lang           = VE.langMode;
-    VE.bargeRecog = recog;
-
-    recog.onresult = function (event) {
-      for (var i = event.resultIndex; i < event.results.length; i++) {
-        var result = event.results[i];
-        var text   = result[0].transcript || '';
-        var conf   = result[0].confidence || 0;
-
-        // Guard against false positives: require min confidence and length
-        if (text.trim().length >= 2 && conf >= 0.5) {
-          VE_stopBargeIn();
-          if (onBargeIn) onBargeIn(text.trim());
-          return;
-        }
-      }
-    };
-
-    recog.onerror = function (e) {
-      // Silently ignore — barge-in is best-effort
-      if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        console.warn('[Voice] Barge-in error:', e.error);
-      }
-    };
-
-    recog.onend = function () {
-      // Re-start barge-in detector if still speaking
-      if (VE.state === 'speaking' && VE.bargeRecog === recog) {
-        try { recog.start(); } catch (e) {}
-      }
-    };
-
-    recog.start();
-  } catch (e) {
-    console.warn('[Voice] Barge-in not available:', e.message);
-  }
-}
-
-function VE_stopBargeIn() {
-  if (VE.bargeRecog) {
-    try { VE.bargeRecog.onend = null; VE.bargeRecog.stop(); } catch (e) {}
-    VE.bargeRecog = null;
-  }
-}
-
-/* ══════════════════════════════════
-   SPEECH RECOGNITION (Main listener)
-   Uses continuous=false + controlled restart
-   VAD silence detection + timeouts
-══════════════════════════════════ */
+/* ── Speech recognition: listen for user's answer ── */
 function VE_startListening() {
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -1316,61 +1162,23 @@ function VE_startListening() {
     return;
   }
 
-  // Clean up any previous instance
-  VE_stopListening();
-
-  // Transition state
-  if (VE.state !== 'listening') {
-    if (!VE_setState('listening')) {
-      VE.state = 'listening'; // force for safety
-    }
+  if (VE.recognition) {
+    try { VE.recognition.stop(); } catch (e) {}
   }
 
   VE.recognition = new SpeechRecognition();
-  VE.recognition.continuous     = false;  // FIXED: prevents sticky state on mobile
+  VE.recognition.continuous     = true;
   VE.recognition.interimResults = true;
   VE.recognition.lang           = VE.langMode;
-
-  // Don't reset currentAnswer here — it may have content from a barge-in
-  // Only reset if starting fresh (no accumulated text)
-  if (!VE.currentAnswer) {
-    VE.currentAnswer = '';
-  }
-
-  var hasReceivedSpeech = false; // track if we got any speech in this session
+  VE.currentAnswer              = '';
 
   VE.recognition.onstart = function () {
+    VE.isListening = true;
     VE_setAvatarState('listening');
-
-    // ── Inactivity timeout: 3s with no speech → auto-stop ──
-    clearTimeout(VE.inactivityTimer);
-    VE.inactivityTimer = setTimeout(function () {
-      if (VE.state === 'listening' && !hasReceivedSpeech && !VE.currentAnswer.trim()) {
-        // No speech at all for 3 seconds — stop and wait
-        // (Don't submit empty answer — just keep listening by restarting)
-        VE_restartRecognition();
-      }
-    }, VE.INACTIVITY_MS);
-
-    // ── Absolute timeout: 15s max listening per question ──
-    clearTimeout(VE.absoluteTimer);
-    VE.absoluteTimer = setTimeout(function () {
-      if (VE.state === 'listening') {
-        if (VE.currentAnswer.trim()) {
-          VE_submitAnswer(VE.currentAnswer.trim());
-        } else {
-          VE_stopListening();
-          VE.state = 'idle';
-          VE_setAvatarState('idle');
-          showToast('No speech detected. Tap the text input to type your answer.', 'info');
-        }
-      }
-    }, VE.ABSOLUTE_MS);
   };
 
   VE.recognition.onresult = function (event) {
-    hasReceivedSpeech = true;
-    var finalText   = '';
+    var finalText = '';
     var interimText = '';
 
     for (var i = event.resultIndex; i < event.results.length; i++) {
@@ -1395,119 +1203,48 @@ function VE_startListening() {
       }
     }
 
-    // Show the running transcript
-    var transcriptEl = document.getElementById('vuserTranscript');
-    if (transcriptEl) transcriptEl.textContent = VE.currentAnswer + interimText;
+    // Show the running transcript (final only, no interim clutter)
+    var transcript = document.getElementById('vuserTranscript');
+    if (transcript) transcript.textContent = VE.currentAnswer + interimText;
 
-    // ── VAD: Reset silence timer — 600ms of silence after speech → submit ──
+    // Reset silence timer on every speech event
     clearTimeout(VE.silenceTimer);
-    clearTimeout(VE.inactivityTimer); // cancel inactivity since we got speech
-
-    if (finalText) {
-      VE.silenceTimer = setTimeout(function () {
-        if (VE.state === 'listening' && VE.currentAnswer.trim()) {
-          VE_submitAnswer(VE.currentAnswer.trim());
-        }
-      }, VE.SILENCE_MS);
-    }
+    VE.silenceTimer = setTimeout(function () {
+      if (VE.currentAnswer.trim()) VE_submitAnswer(VE.currentAnswer.trim());
+    }, VE.silenceDelay);
   };
 
   VE.recognition.onerror = function (e) {
-    if (e.error === 'no-speech') {
-      // Expected — user hasn't spoken yet. Restart.
-      if (VE.state === 'listening' && VE.interviewId) {
-        VE_restartRecognition();
-      }
-    } else if (e.error !== 'aborted') {
+    if (e.error !== 'no-speech') {
       console.warn('[Voice] Recognition error:', e.error);
     }
   };
 
   VE.recognition.onend = function () {
-    // Only auto-restart if we're still supposed to be listening
-    // and haven't accumulated a complete answer
-    if (VE.state === 'listening' && VE.interviewId) {
-      if (VE.currentAnswer.trim()) {
-        // We have accumulated text and recognition ended (continuous=false).
-        // Start the silence timer to auto-submit if no more speech comes
-        clearTimeout(VE.silenceTimer);
-        VE.silenceTimer = setTimeout(function () {
-          if (VE.state === 'listening' && VE.currentAnswer.trim()) {
-            VE_submitAnswer(VE.currentAnswer.trim());
-          }
-        }, VE.SILENCE_MS);
-        // Also restart recognition to capture more speech
-        VE_restartRecognition();
-      } else {
-        // No accumulated text — just restart to keep listening
-        VE_restartRecognition();
-      }
+    VE.isListening = false;
+    // Auto-restart if we're still in the interview and not speaking
+    if (!VE.isSpeaking && VE.interviewId) {
+      setTimeout(VE_startListening, 300);
     }
   };
 
-  try {
-    VE.recognition.start();
-  } catch (e) {
-    console.warn('[Voice] Could not start recognition:', e);
-    // On Android, destroy and retry after delay
-    if (_isAndroid()) {
-      VE.recognition = null;
-      setTimeout(VE_startListening, 500);
-    }
-  }
-}
-
-/* ── Restart recognition (destroy + recreate on Android) ── */
-function VE_restartRecognition() {
-  if (VE.state !== 'listening' || !VE.interviewId) return;
-
-  if (VE.recognition) {
-    try { VE.recognition.onend = null; VE.recognition.stop(); } catch (e) {}
-  }
-
-  if (_isAndroid()) {
-    // Android: destroy and recreate to prevent sticky state
-    VE.recognition = null;
-    setTimeout(function () {
-      if (VE.state === 'listening' && VE.interviewId) {
-        VE_startListening();
-      }
-    }, 350);
-  } else {
-    // Desktop/iOS: quick restart
-    var savedAnswer = VE.currentAnswer;
-    setTimeout(function () {
-      if (VE.state === 'listening' && VE.interviewId) {
-        VE_startListening();
-        VE.currentAnswer = savedAnswer; // preserve accumulated text
-      }
-    }, 150);
-  }
+  try { VE.recognition.start(); }
+  catch (e) { console.warn('[Voice] Could not start recognition:', e); }
 }
 
 function VE_stopListening() {
   clearTimeout(VE.silenceTimer);
-  clearTimeout(VE.inactivityTimer);
-  clearTimeout(VE.absoluteTimer);
   if (VE.recognition) {
-    try { VE.recognition.onend = null; VE.recognition.stop(); } catch (e) {}
+    try { VE.recognition.stop(); } catch (e) {}
     VE.recognition = null;
   }
+  VE.isListening = false;
 }
 
 /* ── Submit a voice answer to the backend AI ── */
 async function VE_submitAnswer(answer) {
   if (!answer || !VE.interviewId) return;
-
-  // Guard against double-submission
-  if (VE.state === 'processing') return;
-
   VE_stopListening();
-  VE_stopBargeIn();
-
-  if (!VE_setState('processing')) {
-    VE.state = 'processing'; // force for safety
-  }
   VE_setAvatarState('thinking');
 
   // Show what the user said in the transcript box
@@ -1536,12 +1273,11 @@ async function VE_submitAnswer(answer) {
         VE_startListening();
       });
     } else {
-      VE.state = 'speaking'; // brief transition
       VE_startListening();
     }
   } catch (err) {
     showToast('AI response error: ' + (err.message || 'Try again'), 'error');
-    VE.state = 'speaking'; // allow transition to listening
+    VE_setAvatarState('listening');
     VE_startListening();
   }
 }
@@ -1608,19 +1344,6 @@ function _initVoiceModal() {
     var val = vtypeInput && vtypeInput.value.trim();
     if (!val) return;
     if (vtypeInput) vtypeInput.value = '';
-
-    // If Priya is speaking, cancel her speech first
-    if (VE.state === 'speaking') {
-      VE.synthesis.cancel();
-      VE.currentUtter = null;
-      VE_stopBargeIn();
-      if (VE.typewriterId) { clearInterval(VE.typewriterId); VE.typewriterId = null; }
-    }
-
-    // Force state so submitAnswer can transition to processing
-    if (VE.state !== 'listening' && VE.state !== 'speaking') {
-      VE.state = 'listening';
-    }
     VE_submitAnswer(val);
   }
 
