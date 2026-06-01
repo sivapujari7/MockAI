@@ -998,7 +998,7 @@ function VE_startBargeMonitor() {
         VE.speechFrames = 0;
       }
 
-      if (VE.speechFrames > 15) {
+      if (VE.speechFrames > 20) {
 
         console.log("BARGE IN DETECTED");
 
