@@ -1121,6 +1121,31 @@ document.addEventListener('visibilitychange', function() {
   }
 });
 
+function VE_isMobileDevice() {
+  var ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+    (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 900);
+}
+
+function VE_getMicConstraints() {
+  return {
+    audio: {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true },
+      channelCount: { ideal: 1 },
+    },
+  };
+}
+
+async function VE_getMicStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia(VE_getMicConstraints());
+  } catch(e) {
+    return navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+}
+
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    VE STATE
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
@@ -1146,8 +1171,16 @@ var VE = {
   micStream:      null,
   vadRunning:     false,
   loudFrames:     0,
-  BARGE_THRESHOLD: 0.5,   // RMS threshold â€” tune 12â€“25 per environment
-  BARGE_FRAMES:    8,   // ~580ms sustained voice before interrupt
+  isMobile:       VE_isMobileDevice(),
+  ttsStartedAt:   0,
+  lastBargeAt:    0,
+  BARGE_THRESHOLD: 1.4,
+  BARGE_MOBILE_THRESHOLD: 4.0,
+  BARGE_FRAMES:    10,
+  BARGE_MOBILE_FRAMES: 18,
+  BARGE_GRACE_MS: 900,
+  BARGE_MOBILE_GRACE_MS: 1800,
+  BARGE_COOLDOWN_MS: 900,
   ttsRunId:        0,
   ttsHardTimer:    null,
 };
@@ -1188,6 +1221,18 @@ function VE_getVoiceForLang(lang) {
   return voice && voice.localService === true ? voice : null;
 }
 
+function VE_getBargeThreshold() {
+  return VE.isMobile ? VE.BARGE_MOBILE_THRESHOLD : VE.BARGE_THRESHOLD;
+}
+
+function VE_getBargeFrames() {
+  return VE.isMobile ? VE.BARGE_MOBILE_FRAMES : VE.BARGE_FRAMES;
+}
+
+function VE_getBargeGraceMs() {
+  return VE.isMobile ? VE.BARGE_MOBILE_GRACE_MS : VE.BARGE_GRACE_MS;
+}
+
 if (VE.synth) {
   VE_pickVoices();
   VE.synth.onvoiceschanged = VE_pickVoices;
@@ -1217,6 +1262,7 @@ function VE_speak(rawText, onDone) {
   VE_showSpeechBox(rawText);
   VE_startBargeMonitor();
   VE_startSynthPinger();
+  VE.ttsStartedAt = Date.now();
 
   clearTimeout(VE.ttsHardTimer);
   VE.ttsHardTimer = setTimeout(function() {
@@ -1281,6 +1327,7 @@ function VE_speak(rawText, onDone) {
 
     utt.onstart = function() {
       started = true;
+      VE.ttsStartedAt = Date.now();
     };
 
     utt.onend = function() {
@@ -1300,7 +1347,14 @@ function VE_speak(rawText, onDone) {
     };
 
     startWatchdog = setTimeout(function() {
-      if (started || runId !== VE.ttsRunId || done || !VE.active || VE.phase !== 'speaking') return;
+      if (
+        started ||
+        (VE.synth && (VE.synth.speaking || VE.synth.pending)) ||
+        runId !== VE.ttsRunId ||
+        done ||
+        !VE.active ||
+        VE.phase !== 'speaking'
+      ) return;
       try { VE.synth.cancel(); } catch(e) {}
       if (!forceDefaultVoice) {
         setTimeout(function() {
@@ -1310,7 +1364,7 @@ function VE_speak(rawText, onDone) {
         idx++;
         speakChunk(false);
       }
-    }, 2500);
+    }, VE.isMobile ? 4500 : 2500);
 
     VE.ttsWatchdog = setTimeout(function() {
       if (runId !== VE.ttsRunId || done || !VE.synth || !VE.synth.speaking) return;
@@ -1322,6 +1376,7 @@ function VE_speak(rawText, onDone) {
 
     try {
       if (VE.synth.paused) VE.synth.resume();
+      VE.ttsStartedAt = Date.now();
       VE.synth.speak(utt);
     } catch(e) {
       clearChunkTimers();
@@ -1377,14 +1432,20 @@ function VE_startBargeMonitor() {
       var sum = 0;
       for (var i = 0; i < bufLen; i++) sum += timeBuf[i] * timeBuf[i];
       var rms = Math.sqrt(sum / bufLen) * 100;
+      var now = Date.now();
+      var inGrace = now - VE.ttsStartedAt < VE_getBargeGraceMs();
+      var inCooldown = now - VE.lastBargeAt < VE.BARGE_COOLDOWN_MS;
+      var ttsActive = VE.synth && (VE.synth.speaking || VE.synth.pending);
 
-      if (rms > VE.BARGE_THRESHOLD ) {
+      if (inGrace || inCooldown || !ttsActive) {
+        VE.loudFrames = 0;
+      } else if (rms > VE_getBargeThreshold()) {
         VE.loudFrames++;
       } else {
         VE.loudFrames = Math.max(0, VE.loudFrames - 2); // decay
       }
 
-      if (VE.loudFrames >= VE.BARGE_FRAMES) {
+      if (VE.loudFrames >= VE_getBargeFrames()) {
         VE.loudFrames = 0;
         VE_handleBargeIn();
       }
@@ -1397,6 +1458,10 @@ function VE_startBargeMonitor() {
   frame();
 }
 function VE_handleBargeIn() {
+  var now = Date.now();
+  if (now - VE.ttsStartedAt < VE_getBargeGraceMs()) return;
+  if (now - VE.lastBargeAt < VE.BARGE_COOLDOWN_MS) return;
+  VE.lastBargeAt = now;
 
   VE_synthStop();
 
@@ -1686,7 +1751,7 @@ function _initVoiceModal() {
     grantBtn.addEventListener('click', async function() {
       setLoading(grantBtn, true);
       try {
-        var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        var stream = await VE_getMicStream();
         await VE_initBargeIn(stream);
         var perm = document.getElementById('vScreenPermission');
         var intr = document.getElementById('vScreenInterview');
@@ -1710,10 +1775,13 @@ function _initVoiceModal() {
 
 async function VE_initBargeIn(existingStream) {
   try {
-    VE.micStream = existingStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+    VE.micStream = existingStream || await VE_getMicStream();
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     VE.audioCtx = new AC();
+    if (VE.audioCtx.state === 'suspended') {
+      try { await VE.audioCtx.resume(); } catch(e) {}
+    }
     var source  = VE.audioCtx.createMediaStreamSource(VE.micStream);
     VE.analyser = VE.audioCtx.createAnalyser();
     VE.analyser.fftSize = 1024;
@@ -1813,6 +1881,8 @@ window.closeVoiceModal = function() {
   VE.detectedLang = 'en-US';
   VE.userLanguage = 'english';
   VE.phase        = 'idle';
+  VE.ttsStartedAt = 0;
+  VE.lastBargeAt  = 0;
 
   // 7. Reset UI
   VE_setPhase('idle');
