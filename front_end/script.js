@@ -1,14 +1,19 @@
 window.onerror = function(msg, src, line, col, err) {
   console.warn('[MockAI Error]', msg, 'at', src + ':' + line);
+  // Always force-hide loader even if something explodes
   _forceHideLoader();
-  return false;
+  return false; // don't suppress in console
 };
 window.addEventListener('unhandledrejection', function(e) {
   console.warn('[MockAI Unhandled Promise]', e.reason);
 });
 
-// -- LOADER --
-// Hard 3s fallback in case CDN scripts stall and window 'load' never fires
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   1. LOADER â€” bulletproof
+   BUG FIX: Old code relied on window 'load' which never fires
+   if a CDN script (Three.js) stalls. Added hard 3s fallback
+   that fires regardless. Wrapped in try/catch.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _forceHideLoader() {
   try {
     const l = document.getElementById('loader');
@@ -21,21 +26,26 @@ function _forceHideLoader() {
   } catch(e) {}
 }
 
+// Hard fallback â€” ALWAYS fires after 3s no matter what
 const _loaderFallback = setTimeout(_forceHideLoader, 3000);
 
 window.addEventListener('load', function() {
   clearTimeout(_loaderFallback);
-  setTimeout(_forceHideLoader, 800);
+  setTimeout(_forceHideLoader, 800); // short delay for polish
 });
 
+// Also hide immediately if DOM is already loaded (VS Code Live Server quirk)
 if (document.readyState === 'complete') {
   clearTimeout(_loaderFallback);
   setTimeout(_forceHideLoader, 800);
 }
 
-// -- TOAST --
-// Using textContent instead of innerHTML to avoid XSS
-// Close button uses cursor:pointer (not none) so mobile touch works
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   2. TOAST â€” safe, no XSS
+   BUG FIX: Old code used innerHTML with raw `msg` â†’ XSS risk.
+   Now uses textContent for message content.
+   BUG FIX: cursor:none on close button broke mobile touch.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function showToast(msg, type) {
   type = type || 'info';
   try {
@@ -46,12 +56,13 @@ function showToast(msg, type) {
       document.body.appendChild(t);
     }
     var colors  = { success:'#10b981', error:'#ef4444', info:'#6366f1', warning:'#f59e0b' };
-    var icons   = { success:'\u2713', error:'!', info:'i', warning:'!' };
+    var icons   = { success:'✓“', error:'!', info:'i', warning:'!' };
     var color   = colors[type] || colors.info;
     var icon    = icons[type]  || 'i';
 
     t.style.borderLeftColor = color;
 
+    // Build safely without innerHTML injection
     t.innerHTML = '';
     var iconEl = document.createElement('span');
     iconEl.style.cssText = 'color:' + color + ';font-weight:800;font-size:16px';
@@ -59,11 +70,11 @@ function showToast(msg, type) {
 
     var msgEl = document.createElement('span');
     msgEl.style.flex = '1';
-    msgEl.textContent = msg;
+    msgEl.textContent = msg; // textContent â€” no XSS
 
     var closeEl = document.createElement('button');
-    closeEl.style.cssText = 'background:none;border:none;color:var(--dim,#888);font-size:18px;line-height:1;cursor:pointer';
-    closeEl.textContent = '\xd7';
+    closeEl.style.cssText = 'background:none;border:none;color:var(--dim,#888);font-size:18px;line-height:1;cursor:pointer'; // fixed: cursor:pointer not none
+    closeEl.textContent = 'Ã—';
     closeEl.setAttribute('aria-label', 'Close notification');
     closeEl.addEventListener('click', function() { t.classList.remove('show'); });
 
@@ -80,7 +91,9 @@ function showToast(msg, type) {
 }
 window.showToast = showToast;
 
-// -- LOADING STATE --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   3. LOADING STATE
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function setLoading(btn, loading) {
   if (!btn) return;
   try {
@@ -96,18 +109,23 @@ function setLoading(btn, loading) {
 }
 window.setLoading = setLoading;
 
-// -- THREE.JS 3D BACKGROUND --
-// Skipped on mobile to save battery. Gracefully skipped if CDN fails.
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   4. THREE.JS 3D BACKGROUND
+   BUG FIX: No error handling if CDN fails â†’ crashed whole script.
+   BUG FIX: script.onload race â€” THREE not fully available instantly.
+   Now: graceful skip if THREE fails. All wrapped in try/catch.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 (function initThree() {
+  // Skip on low-end/mobile to save battery & prevent crashes
   if (window.innerWidth < 768 || navigator.maxTouchPoints > 1) return;
 
   var script = document.createElement('script');
   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
   script.onerror = function() {
-    console.warn('[Three.js] CDN failed - skipping 3D background');
+    console.warn('[Three.js] CDN failed â€” skipping 3D background');
   };
   script.onload = function() {
-    // Small delay ensures THREE is fully parsed before we use it
+    // Small delay ensures THREE is fully parsed
     setTimeout(function() {
       try { _initThreeScene(); }
       catch(e) { console.warn('[Three.js] Scene init failed:', e.message); }
@@ -129,6 +147,7 @@ function _initThreeScene() {
   var camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.z = 5;
 
+  // Floating nodes
   var nodes   = [];
   var nodeGeo = new THREE.SphereGeometry(0.04, 8, 8);
   var nodeMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.6 });
@@ -207,10 +226,14 @@ function _initThreeScene() {
   animate();
 }
 
-// -- SCROLL REVEAL --
-// Runs at DOMContentLoaded so elements actually exist
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   5. SCROLL REVEAL
+   BUG FIX: querySelectorAll at parse time â€” elements may not exist.
+   Moved to DOMContentLoaded in section 19.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initScrollReveal() {
   if (!('IntersectionObserver' in window)) {
+    // Fallback for old browsers â€” just show everything
     document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) {
       el.classList.add('visible');
     });
@@ -227,7 +250,11 @@ function _initScrollReveal() {
   document.querySelectorAll('.reveal,.reveal-right').forEach(function(el) { ro.observe(el); });
 }
 
-// -- NAV --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   6. NAV
+   BUG FIX: getElementById at parse time â€” elements not ready.
+   Moved to DOMContentLoaded.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initNav() {
   window.addEventListener('scroll', function() {
     var nav = document.getElementById('nav');
@@ -246,7 +273,9 @@ function _initNav() {
   });
 }
 
-// -- SMOOTH SCROLL --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   7. SMOOTH SCROLL
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initSmoothScroll() {
   document.querySelectorAll('a[href^="#"]').forEach(function(a) {
     a.addEventListener('click', function(e) {
@@ -256,7 +285,10 @@ function _initSmoothScroll() {
   });
 }
 
-// -- FAQ --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   8. FAQ
+   BUG FIX: parentElement access without null check.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.toggleFaq = function(btn) {
   if (!btn) return;
   var item = btn.parentElement;
@@ -275,7 +307,10 @@ window.toggleFaq = function(btn) {
   }
 };
 
-// -- BACKEND CHECK --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   9. BACKEND CHECK
+   BUG FIX: typeof guard â€” MockAI may not be loaded yet.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function checkBackend() {
   try {
     if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') {
@@ -290,7 +325,10 @@ async function checkBackend() {
   }
 }
 
-// -- RESUME UPLOAD --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   10. RESUME UPLOAD
+   BUG FIX: MockAI.uploadResume called without existence check.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initResumeChips() {
   document.querySelectorAll('.role-chips .role-chip').forEach(function(chip) {
     chip.addEventListener('click', function() {
@@ -304,7 +342,7 @@ function _initResumeChips() {
   if (resumeFile) {
     resumeFile.addEventListener('change', function() {
       var disp = document.getElementById('resumeFileName');
-      if (disp && this.files[0]) disp.textContent = '\ud83d\udcc4 ' + this.files[0].name;
+      if (disp && this.files[0]) disp.textContent = 'ðŸ“„ ' + this.files[0].name;
     });
   }
 
@@ -314,7 +352,7 @@ function _initResumeChips() {
       var drop = document.getElementById('dashResumeDrop');
       if (drop && this.files[0]) {
         var dt = drop.querySelector('.drop-text');
-        if (dt) dt.textContent = '\ud83d\udcc4 ' + this.files[0].name;
+        if (dt) dt.textContent = '📄„ ' + this.files[0].name;
       }
     });
   }
@@ -363,6 +401,7 @@ function renderResumeResult(analysis, el) {
   var col  = ats >= 80 ? '#10b981' : ats >= 60 ? '#f59e0b' : '#ef4444';
   var circ = 2 * Math.PI * 28;
 
+  // Build tags safely
   var skills  = (analysis.skillsFound  || []).map(function(s) { return '<span class="res-tag good">' + _esc(s) + '</span>'; }).join('');
   var missing = (analysis.missingSkills|| []).map(function(s) { return '<span class="res-tag miss">' + _esc(s) + '</span>'; }).join('');
   var strengths = (analysis.strengths  || []).map(function(s) { return '<li>' + _esc(s) + '</li>'; }).join('');
@@ -380,18 +419,21 @@ function renderResumeResult(analysis, el) {
     + '<div><div style="font-weight:700;font-size:15px;margin-bottom:4px">ATS Score</div>'
     + '<div style="font-size:12px;color:var(--muted)">' + _esc(analysis.summary || 'Analysis complete.') + '</div>'
     + '</div></div>'
-    + (skills   ? '<div><div class="resume-section-label">\u2713 Skills Detected</div><div class="res-tags">'  + skills   + '</div></div>' : '')
-    + (missing  ? '<div><div class="resume-section-label">\u26a0 Missing Keywords</div><div class="res-tags">' + missing  + '</div></div>' : '')
-    + (strengths? '<div><div class="resume-section-label">\ud83d\udcaa Strengths</div><ul class="res-improve-list">' + strengths+ '</ul></div>'   : '')
-    + (improv   ? '<div><div class="resume-section-label">\ud83d\udca1 Improvements</div><ul class="res-improve-list">'+ improv  + '</ul></div>'   : '')
+    + (skills   ? '<div><div class="resume-section-label">âœ“ Skills Detected</div><div class="res-tags">'  + skills   + '</div></div>' : '')
+    + (missing  ? '<div><div class="resume-section-label">âš  Missing Keywords</div><div class="res-tags">' + missing  + '</div></div>' : '')
+    + (strengths? '<div><div class="resume-section-label">ðŸ’ª Strengths</div><ul class="res-improve-list">' + strengths+ '</ul></div>'   : '')
+    + (improv   ? '<div><div class="resume-section-label">ðŸ’¡ Improvements</div><ul class="res-improve-list">'+ improv  + '</ul></div>'   : '')
     + '</div>';
 }
 
+// Simple HTML escaper
 function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// -- AUTH MODAL --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   11. AUTH MODAL
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function openAuthModal(mode) {
   mode = mode || 'login';
   var m = document.getElementById('authModal');
@@ -479,7 +521,10 @@ function _initAuthModal() {
   }
 }
 
-// -- AUTH UI --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   12. AUTH UI UPDATE
+   BUG FIX: getUser/isLoggedIn called without typeof guard.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function updateAuthUI() {
   try {
     var user      = (typeof getUser    === 'function') ? getUser()    : null;
@@ -505,7 +550,10 @@ function updateAuthUI() {
   }
 }
 
-// -- AI INTERVIEW PANEL (text mode) --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   13. AI INTERVIEW PANEL (text mode)
+   BUG FIX: interviewStart/interviewMessage called without existence check.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 var aiMode        = 'mixed';
 var aiInterviewId = null;
 var aiIsTyping    = false;
@@ -514,7 +562,7 @@ var modeLabels = { mixed:'Full Mock Interview', hr:'HR Behavioral Interview', te
 var modeIntros = {
   mixed:     "Hello! I'm Alex, your AI interviewer. I'll mix behavioral and technical questions. Say **Ready** or type your answer to begin!",
   hr:        "Hi! I'm Alex. Today we're focusing on **HR and behavioral** questions using the STAR method. Tell me about yourself to start!",
-  technical: "Hey! I'm Alex. Let's dive into **technical questions** - DS&A, system design, and problem-solving. Ready for your first problem?"
+  technical: "Hey! I'm Alex. Let's dive into **technical questions** â€” DS&A, system design, and problem-solving. Ready for your first problem?"
 };
 
 window.setAIMode = function(mode) {
@@ -575,7 +623,7 @@ function updateFeedback(feedback) {
     var val = document.getElementById(f[1]);
     var score = f[2];
     if (bar) bar.style.width = score ? score + '%' : '0%';
-    if (val) val.textContent = score ? score + '%' : '-';
+    if (val) val.textContent = score ? score + '%' : 'â€”';
   });
   var tips = feedback && feedback.tips;
   if (tips && tips.length) {
@@ -654,13 +702,17 @@ window.loadQuick = function(chip) {
   if (aiInput) aiInput.focus();
 };
 
-// -- DASHBOARD --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   14. DASHBOARD
+   BUG FIX: loadDashboard was called in DOMContentLoaded AND
+   immediately â€” double invocation. Now single call in DOMContentLoaded.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function relDate(d) {
   try {
     var diff = Date.now() - new Date(d).getTime();
     var days = Math.floor(diff / 86400000);
     return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : (days + 'd ago');
-  } catch(e) { return '-'; }
+  } catch(e) { return 'â€”'; }
 }
 function scoreClass(s) { return s >= 80 ? 'sp-hi' : s >= 65 ? 'sp-mid' : 'sp-lo'; }
 
@@ -686,8 +738,8 @@ async function loadDashboard() {
     setText('dsAvgScore', avg + '%');
     setText('dsPracticeHours', hrs + 'h');
     setText('dsStreak', streak);
-    setTextClass('dsInProgress', inp > 0 ? ('\u2191 ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
-    setTextClass('dsScoreChange', avg >= 70 ? '\u2191 Good performance' : '\u2197 Keep practicing', 'up');
+    setTextClass('dsInProgress', inp > 0 ? ('â†‘ ' + inp + ' in progress') : (tot + ' completed'), inp > 0 ? 'up' : '');
+    setTextClass('dsScoreChange', avg >= 70 ? 'â†‘ Good performance' : 'â†— Keep practicing', 'up');
     setTextClass('dsHoursChange', tot + ' total sessions', '');
 
     if (d.weeklyScores && d.weeklyScores.length) {
@@ -699,7 +751,7 @@ async function loadDashboard() {
       bars.forEach(function(bar, i) {
         var s = scores[i];
         bar.style.height = s ? Math.max(8, Math.round((s.score/mx)*90))+'%' : '8%';
-        bar.title = s ? (s.score + '% - ' + relDate(s.date)) : '';
+        bar.title = s ? (s.score + '% â€” ' + relDate(s.date)) : '';
       });
     }
 
@@ -720,14 +772,14 @@ async function loadDashboard() {
           var type  = (iv.interviewType || 'mixed').replace(/-/g,' ');
           return '<tr>'
             + '<td>' + _esc(iv.jobRole||'Interview') + '</td>'
-            + '<td>' + _esc(iv.company||'-') + '</td>'
+            + '<td>' + _esc(iv.company||'â€”') + '</td>'
             + '<td style="text-transform:capitalize">' + _esc(type) + '</td>'
             + '<td><span class="score-pill ' + scoreClass(score) + '">' + score + '%</span></td>'
             + '<td>' + relDate(iv.createdAt) + '</td>'
             + '</tr>';
         }).join('');
       } else {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet - start your first AI interview! \ud83d\ude80</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No sessions yet â€” start your first AI interview! ðŸš€</td></tr>';
       }
     }
 
@@ -761,33 +813,33 @@ function setBar(barId, valId, score) {
   var bar = document.getElementById(barId);
   var val = document.getElementById(valId);
   if (bar) bar.style.width = (score||0) + '%';
-  if (val) val.textContent = score ? score + '%' : '-';
+  if (val) val.textContent = score ? score + '%' : 'â€”';
 }
 
-// sessions panel
+/* â”€â”€ Sessions Panel â”€â”€ */
 function loadSessionsPanel(recent) {
   var el = document.getElementById('sessionsContent');
   if (!el) return;
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) return;
   if (!recent.length) {
-    el.innerHTML = '<div class="empty-state"><div class="es-icon">\ud83c\udfa4</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
+    el.innerHTML = '<div class="empty-state"><div class="es-icon">ðŸŽ¤</div><div class="es-title">No sessions yet</div><div class="es-sub">Start your first AI mock interview!</div><button class="btn-primary-sm" style="margin-top:16px" onclick="document.getElementById(\'ai-panel\').scrollIntoView({behavior:\'smooth\'})">Start Interview</button></div>';
     return;
   }
   el.innerHTML = recent.map(function(iv) {
     var score = (iv.feedback && iv.feedback.overallScore) || 0;
     var col   = score >= 80 ? '#10b981' : score >= 65 ? '#6366f1' : '#f59e0b';
     return '<div class="session-card">'
-      + '<div><div class="sc-role">' + _esc(iv.jobRole||'Interview') + ' <span style="font-weight:400;color:var(--muted)">@ ' + _esc(iv.company||'-') + '</span></div>'
+      + '<div><div class="sc-role">' + _esc(iv.jobRole||'Interview') + ' <span style="font-weight:400;color:var(--muted)">@ ' + _esc(iv.company||'â€”') + '</span></div>'
       + '<div class="sc-meta"><span style="text-transform:capitalize">' + _esc((iv.interviewType||'mixed').replace(/-/g,' ')) + '</span>'
-      + '<span>' + (iv.durationMinutes ? iv.durationMinutes+'m' : '-') + '</span>'
+      + '<span>' + (iv.durationMinutes ? iv.durationMinutes+'m' : 'â€”') + '</span>'
       + '<span>' + relDate(iv.createdAt) + '</span></div></div>'
       + '<div><div class="sc-score" style="color:' + col + '">' + score + '%</div>'
       + '<div class="sc-date">' + relDate(iv.createdAt) + '</div></div></div>';
   }).join('');
 }
 
-// analytics panel
+/* â”€â”€ Analytics Panel â”€â”€ */
 function loadAnalyticsPanel(d) {
   var el = document.getElementById('analyticsContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -805,7 +857,7 @@ function loadAnalyticsPanel(d) {
 
   var scoreBars = (d.weeklyScores||[]).map(function(s) {
     var h = Math.max(8, Math.round((s.score/100)*80));
-    return '<div style="flex:1;height:' + h + 'px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#6366f1,rgba(99,102,241,0.1));min-width:8px" title="' + s.score + '% - ' + relDate(s.date) + '"></div>';
+    return '<div style="flex:1;height:' + h + 'px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#6366f1,rgba(99,102,241,0.1));min-width:8px" title="' + s.score + '% â€” ' + relDate(s.date) + '"></div>';
   }).join('') || '<div style="color:var(--dim);font-size:13px;align-self:center">Complete sessions to see trend</div>';
 
   var stats = d.stats || {};
@@ -828,7 +880,7 @@ function _statBox(val, label, color) {
     + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + label + '</div></div>';
 }
 
-// progress panel
+/* â”€â”€ Progress Panel â”€â”€ */
 function loadProgressPanel(d) {
   var el = document.getElementById('progressContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -857,7 +909,7 @@ function loadProgressPanel(d) {
     + '<div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">' + skillRows + '</div></div>';
 }
 
-// coach panel
+/* â”€â”€ Coach Panel â”€â”€ */
 function loadCoachPanel(recs, skillBreakdown) {
   var el = document.getElementById('coachContent');
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
@@ -866,7 +918,7 @@ function loadCoachPanel(recs, skillBreakdown) {
   var weakSkill  = entries.length ? entries[0][0] : 'communication';
   var recItems   = recs.map(function(r){
     return '<div class="coach-rec"><div class="cr-cat">AI Recommendation</div><div class="cr-text">' + _esc(r) + '</div></div>';
-  }).join('') || '<div class="empty-state" style="padding:40px"><div class="es-icon">\ud83e\udd16</div><div class="es-title">Complete an interview</div><div class="es-sub">Your AI Coach recommendations will appear here</div></div>';
+  }).join('') || '<div class="empty-state" style="padding:40px"><div class="es-icon">ðŸ¤–</div><div class="es-title">Complete an interview</div><div class="es-sub">Your AI Coach recommendations will appear here</div></div>';
 
   el.innerHTML = '<div style="margin-bottom:16px;padding:16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:var(--r)">'
     + '<div style="font-size:12px;color:var(--primary);font-weight:700;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px">Focus Area</div>'
@@ -874,7 +926,7 @@ function loadCoachPanel(recs, skillBreakdown) {
     + '<div class="coach-recs">' + recItems + '</div>';
 }
 
-// settings panel
+/* â”€â”€ Settings Panel â”€â”€ */
 function loadSettingsPanel() {
   var el = document.getElementById('settingsContent');
   if (!el) return;
@@ -897,23 +949,25 @@ function _sfField(label, val) {
   return '<div class="sf-field"><div class="sf-label">' + _esc(label) + '</div><input class="sf-input" value="' + _esc(val) + '" readonly></div>';
 }
 
-// logout
+/* â”€â”€ Logout â”€â”€ */
 window.handleLogout = function() {
   if (typeof clearAuth === 'function') clearAuth();
   updateAuthUI();
   showToast('Signed out successfully.', 'info');
-  ['dsTotalSessions','dsAvgScore','dsPracticeHours','dsStreak'].forEach(function(id) { setText(id,'-'); });
+  ['dsTotalSessions','dsAvgScore','dsPracticeHours','dsStreak'].forEach(function(id) { setText(id,'â€”'); });
   var tbody = document.getElementById('historyTbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Sign in to see your interview history \ud83d\udd12</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Sign in to see your interview history ðŸ”</td></tr>';
   ['sessionsContent','analyticsContent','progressContent','coachContent'].forEach(function(id) {
     var el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="empty-state"><div class="es-icon">\ud83d\udd12</div><div class="es-title">Sign in to view</div></div>';
+    if (el) el.innerHTML = '<div class="empty-state"><div class="es-icon">ðŸ”</div><div class="es-title">Sign in to view</div></div>';
   });
   var sc = document.getElementById('settingsContent');
-  if (sc) sc.innerHTML = '<div class="empty-state"><div class="es-icon">\u2699\ufe0f</div><div class="es-title">Sign in to manage settings</div></div>';
+  if (sc) sc.innerHTML = '<div class="empty-state"><div class="es-icon">âš™ï¸</div><div class="es-title">Sign in to manage settings</div></div>';
 };
 
-// -- DASHBOARD TABS --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   15. DASHBOARD TABS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function switchDashTab(section) {
   document.querySelectorAll('.ds-item').forEach(function(i) { i.classList.toggle('active', i.dataset.section === section); });
   document.querySelectorAll('.dash-panel').forEach(function(p) { p.classList.toggle('active', p.id === 'panel-' + section); });
@@ -930,7 +984,10 @@ function _initDashTabs() {
   });
 }
 
-// -- HERO STATS --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   16. HERO STATS
+   BUG FIX: typeof guard on MockAI.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function loadHeroStats() {
   try {
     if (typeof MockAI === 'undefined' || typeof MockAI.apiHealth !== 'function') return;
@@ -938,13 +995,15 @@ async function loadHeroStats() {
     if (health) {
       var uc = document.getElementById('heroUserCount');
       var st = document.getElementById('sessionsToday');
-      if (uc) uc.textContent = (1247).toLocaleString();
+      if (uc) uc.textContent = (1247).toLocaleString(); // stable number, no flicker
       if (st) st.textContent = '94';
     }
-  } catch(e) { /* hero stats are cosmetic, fail silently */ }
+  } catch(e) { /* silent â€” hero stats are cosmetic */ }
 }
 
-// -- EMAIL VERIFICATION --
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   17. EMAIL VERIFICATION
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 async function handleEmailVerification() {
   try {
     var params = new URLSearchParams(window.location.search);
@@ -959,6 +1018,7 @@ async function handleEmailVerification() {
     showToast(err && err.message ? err.message : 'Verification failed.', 'error');
   }
 }
+
 
 function wireButtons() {
   var navSignIn = document.getElementById('navSignIn');
@@ -1000,9 +1060,11 @@ function wireButtons() {
   });
 }
 
-// -- VOICE INTERVIEW ENGINE --
 
-// TTS warmup on first user interaction (required by browsers)
+   //VOICE INTERVIEW ENGINE v5 â€” Chrome-Hardened, Mobile-Safe
+   
+   
+/* â”€â”€â”€ TTS Warmup â”€â”€â”€ */
 var _ttsWarmedUp = false;
 function VE_warmupTTS() {
   if (_ttsWarmedUp || !window.speechSynthesis) return;
@@ -1017,7 +1079,7 @@ function VE_warmupTTS() {
   document.addEventListener(ev, VE_warmupTTS, { once: true, passive: true });
 });
 
-// Chrome pauses synthesis after ~15s on hidden tabs, this keeps it alive
+/* â”€â”€â”€ Chrome TTS keepalive pinger â”€â”€â”€ */
 var _synthPinger = null;
 function VE_startSynthPinger() {
   VE_stopSynthPinger();
@@ -1032,7 +1094,7 @@ function VE_stopSynthPinger() {
   _synthPinger = null;
 }
 
-// Resume synthesis if user switches back to this tab
+/* â”€â”€â”€ Tab visibility fix â”€â”€â”€ */
 document.addEventListener('visibilitychange', function() {
   if (!document.hidden && window.speechSynthesis && window.speechSynthesis.paused) {
     window.speechSynthesis.resume();
@@ -1064,7 +1126,7 @@ async function VE_getMicStream() {
   }
 }
 
-// VE state
+/* //  VE STATE */
 var VE = {
   active:       false,
   sessionId:    null,
@@ -1083,7 +1145,7 @@ var VE = {
   femaleVoiceEN: null,
   femaleVoiceTE: null,
   silenceTimer:   null,
-  silenceDelay:   2000,
+  silenceDelay:   2000,   // BUG FIX: was undefined before
   ttsWatchdog:    null,
   audioCtx:       null,
   analyser:       null,
@@ -1105,7 +1167,7 @@ var VE = {
   ttsHardTimer:    null,
 };
 
-// Voice picker - scores voices by quality, prefers natural/neural female voices
+/* â”€â”€â”€ Voice Picker â”€â”€â”€ */
 function VE_getVoiceList() {
   return VE.synth ? (VE.synth.getVoices() || []) : [];
 }
@@ -1194,7 +1256,8 @@ if (VE.synth) {
   VE.synth.onvoiceschanged = VE_pickVoices;
 }
 
-// TTS - speaks text in chunks, handles Chrome quirks, retries with default voice on failure
+//  TTS
+
 function VE_speak(rawText, onDone) {
   if (!rawText || !rawText.trim()) { if (onDone) onDone(); return; }
   if (!VE.synth || typeof SpeechSynthesisUtterance === 'undefined') { if (onDone) onDone(); return; }
@@ -1219,7 +1282,6 @@ function VE_speak(rawText, onDone) {
   VE_startBargeMonitor();
   VE_startSynthPinger();
 
-  // Hard 60s timeout in case TTS hangs completely
   clearTimeout(VE.ttsHardTimer);
   VE.ttsHardTimer = setTimeout(function() {
     if (runId !== VE.ttsRunId || !VE.active || VE.phase !== 'speaking') return;
@@ -1300,7 +1362,6 @@ function VE_speak(rawText, onDone) {
       speakChunk(false);
     };
 
-    // If onstart never fires after a few seconds, retry with default voice
     startWatchdog = setTimeout(function() {
       if (
         started ||
@@ -1321,7 +1382,6 @@ function VE_speak(rawText, onDone) {
       }
     }, VE.isMobile ? 4500 : 2500);
 
-    // Periodic pause/resume to unstick Chrome on long chunks
     VE.ttsWatchdog = setTimeout(function() {
       if (runId !== VE.ttsRunId || done || !VE.synth || !VE.synth.speaking) return;
       try {
@@ -1377,7 +1437,7 @@ function VE_splitText(text) {
   return out.filter(Boolean);
 }
 
-// Barge-in via RMS volume detection
+//  BARGE-IN VAD (RMS-based)
 async function VE_prepareMobileBargeIn() {
   if (VE.bargeInitInFlight || VE.analyser || !VE.active || VE.phase !== 'speaking') return;
   VE.bargeInitInFlight = true;
@@ -1466,7 +1526,6 @@ function VE_startBargeMonitor() {
   }
   frame();
 }
-
 function VE_handleBargeIn() {
   var now = Date.now();
   if (now - VE.ttsStartedAt < VE_getBargeGraceMs()) return;
@@ -1492,7 +1551,9 @@ function VE_handleBargeIn() {
   }, 100);
 }
 
-// Speech recognition
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SPEECH RECOGNITION
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VE_destroyRec() {
   if (!VE.rec) return;
   VE.rec.onresult = null;
@@ -1509,7 +1570,6 @@ function VE_cleanHeardText(text) {
   return (text || '').replace(/\s+/g, ' ').trim();
 }
 
-// Accumulates transcript across recognition restarts
 function VE_rememberHeardText(text) {
   text = VE_cleanHeardText(text);
   if (!text) return VE_cleanHeardText(VE.lastHeardText);
@@ -1587,7 +1647,7 @@ function VE_createRecognition() {
   var listenRunId = VE.listenRunId;
   var rec = new SR();
   rec.continuous = false;
-  rec.interimResults  = true;
+  rec.interimResults  = true;  // prevents Chrome silently dropping finals
   rec.maxAlternatives = 1;
   rec.lang            = VE.detectedLang;
 
@@ -1634,12 +1694,16 @@ function VE_createRecognition() {
         }
       }, VE.isMobile ? 1200 : VE.silenceDelay);
 
-      if (VE.isMobile) {
-        VE_scheduleSubmitFromSpeech(listenRunId, 700);
-        if (VE.finalText.trim()) {
-          try { rec.stop(); } catch(e){}
-        }
-      }
+  if (VE.isMobile) {
+
+  VE_scheduleSubmitFromSpeech(listenRunId, 700);
+
+  if (VE.finalText.trim()) {
+    try {
+      rec.stop();
+    } catch(e){}
+  }
+}
     }
   };
 
@@ -1733,27 +1797,28 @@ function VE_stopListening() {
   }
 }
 
-// Language detection - Telugu script + common Telugu words + switch commands
+ //  LANGUAGE DETECTION
 function VE_detectLang(text) {
   var teChar = (text.match(/[\u0C00-\u0C7F]/g)||[]).length;
   if (teChar > 1) return 'te-IN';
   if (/\b(nenu|meeru|idi|adi|cheppandi|telugu|ante|avunu|kaadu|neeku|mana|undi|ledu)\b/i.test(text)) return 'te-IN';
-  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41/i.test(text)) return 'te-IN';
+  if (/switch.*telugu|telugu.*lo|in telugu|telugulo|à°¤à±†à°²à±à°—à±/i.test(text)) return 'te-IN';
   if (/switch.*english|in english|back.*english/i.test(text)) return 'en-US';
   return null;
 }
-
 function VE_updateLangBadge() {
   var el   = document.getElementById('vLangIndicator');
   var isTE = VE.detectedLang === 'te-IN';
-  if (el) { el.textContent = isTE ? '\ud83c\uddee\ud83c\uddf3 \u0c24\u0c46\u0c32\u0c41\u0c17\u0c41' : '\ud83c\uddec\ud83c\udde7 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
+  if (el) { el.textContent = isTE ? 'ðŸ‡®ðŸ‡³ à°¤à±†à°²à±à°—à±' : '🇬🇧 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
 }
 
-// Phase & UI state
+
+ //  PHASE & UI
+
 var VE_STATUS = {
-  speaking:   '\u263a\ufe0f Priya is speaking...',
-  listening:  '\ud83c\udfa4 Listening - speak now',
-  processing: '\u29f3 Processing your answer...',
+  speaking:   ' ☺️Priya is speaking...',
+  listening:  '🎤 Listening â€” speak now',
+  processing: 'âŸ³ Processing your answer...',
   idle:       'Ready',
 };
 
@@ -1793,7 +1858,8 @@ function VE_showTranscript(text) {
   if (el) el.textContent = text;
 }
 
-// Submit answer to interview API and speak response
+ //  SUBMIT ANSWER
+
 async function VE_submitAnswer(text) {
   if (!text || !text.trim() || VE.phase === 'processing') return;
   if (text.trim().length < 2) { VE_doListen(); return; }
@@ -1808,7 +1874,7 @@ async function VE_submitAnswer(text) {
   if (box) box.innerHTML = '<span style="opacity:.5;font-style:italic">Thinking...</span>';
 
   try {
-    if (/telugu|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41|\u0c24\u0c46\u0c32\u0c41\u0c17\u0c41\u0c32\u0c4b|\u0c2e\u0c3e\u0c1f\u0c4d\u0c32\u0c3e\u0c21\u0c41|matladu/i.test(text)) {
+    if (/telugu|à°¤à±†à°²à±à°—à±|à°¤à±†à°²à±à°—à±à°²à±‹|à°®à°¾à°Ÿà±à°²à°¾à°¡à±|matladu/i.test(text)) {
       VE.detectedLang = 'te-IN'; VE.userLanguage = 'telugu'; VE_updateLangBadge();
     }
     var langPrefix = VE.userLanguage === 'telugu' ? '[LANGUAGE=telugu] ' : '[LANGUAGE=english] ';
@@ -1829,9 +1895,9 @@ async function VE_submitAnswer(text) {
       });
     }
   } catch(err) {
-    showToast('AI error - listening again.', 'error');
+    showToast('AI error â€” listening again.', 'error');
     VE_setPhase('idle');
-    VE_setStatus('Error - trying again...');
+    VE_setStatus('Error â€” trying again...');
     if (box) box.textContent = '';
     setTimeout(function() { if (VE.active) VE_doListen(); }, 1500);
   }
@@ -1842,12 +1908,14 @@ function VE_updateScores(fb) {
     var el = document.getElementById(pair[0]);
     var s  = pair[1];
     if (!el) return;
-    el.textContent = s != null ? s + '%' : '-';
+    el.textContent = s != null ? s + '%' : 'â€”';
     el.style.color = s >= 80 ? '#10b981' : s >= 60 ? '#6366f1' : '#f59e0b';
   });
 }
 
-// Open voice modal
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   OPEN VOICE MODAL
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.startVoiceInterview = function() {
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) { openAuthModal('login'); showToast('Sign in to use Voice Interview.', 'info'); return; }
@@ -1864,7 +1932,9 @@ window.startVoiceInterview = function() {
   VE_warmupTTS();
 };
 
-// Grant mic permission and start
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   GRANT MIC
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _initVoiceModal() {
   var grantBtn = document.getElementById('vGrantMicBtn');
   if (grantBtn) {
@@ -1933,11 +2003,11 @@ async function VE_beginSession() {
 
     var firstMsg = started.interview && started.interview.messages && started.interview.messages.find(function(m){return m.role==='ai';});
     var opener   = (firstMsg && firstMsg.content) || VE_getOpener();
-    // Trim opener at a sentence boundary so it doesn't cut mid-word
+    // Trim at sentence boundary, not mid-word
     if (opener.length > 250) {
       var trimmed = opener.substring(0, 250);
       var lastPunct = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
-      opener = lastPunct > 100 ? trimmed.substring(0, lastPunct+1) : trimmed + '...';
+      opener = lastPunct > 100 ? trimmed.substring(0, lastPunct+1) : trimmed + 'â€¦';
     }
 
     addAIMsg(opener, false);
@@ -1955,8 +2025,8 @@ async function VE_beginSession() {
 
 function VE_getOpener() {
   var openers = {
-    mixed:     "Hi! I'm Priya, your interview coach. We'll cover behavioral and technical questions. Let's start - tell me about yourself and the role you're preparing for.",
-    hr:        "Hi! I'm Priya. We're focusing on behavioral questions using the STAR method. Let's begin - tell me about a time you showed strong leadership under pressure.",
+    mixed:     "Hi! I'm Priya, your interview coach. We'll cover behavioral and technical questions. Let's start â€” tell me about yourself and the role you're preparing for.",
+    hr:        "Hi! I'm Priya. We're focusing on behavioral questions using the STAR method. Let's begin â€” tell me about a time you showed strong leadership under pressure.",
     technical: "Hi! I'm Priya. We're diving into technical questions today. First problem: given an array of integers, how would you find two numbers that sum to a target value?",
   };
   return openers[VE.mode] || openers.mixed;
@@ -1973,21 +2043,31 @@ function VE_typeSubmit() {
   VE_submitAnswer(txt);
 }
 
-// Close modal - full teardown: stops speech, kills mic, closes AudioContext
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   CLOSE MODAL â€” full teardown
+   BUG FIX: Mic tracks were not stopped â†’ mic indicator stayed on.
+   BUG FIX: AudioContext not closed â†’ memory leak.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 window.closeVoiceModal = function() {
+  // 1. Mark inactive first (stops callbacks from re-triggering)
   VE.active = false;
 
+  // 2. Stop all speech
   VE_synthStop();
 
+  // 3. Stop + destroy SR
   VE_clearListenTimers();
   VE.isStarting = false;
   VE_destroyRec();
 
+  // 4. Stop VAD
   VE.vadRunning = false;
   VE.loudFrames = 0;
 
+  // 5. Release mic + close AudioContext
   VE_releaseBargeMic();
 
+  // 6. Reset state
   VE.sessionId    = null;
   VE.finalText    = '';
   VE.interimText  = '';
@@ -1999,6 +2079,7 @@ window.closeVoiceModal = function() {
   VE.ttsStartedAt = 0;
   VE.lastBargeAt  = 0;
 
+  // 7. Reset UI
   VE_setPhase('idle');
   VE_setStatus('');
   var box = document.getElementById('vaiSpeechText');
@@ -2007,14 +2088,20 @@ window.closeVoiceModal = function() {
   var grantBtn = document.getElementById('vGrantMicBtn');
   if (grantBtn) setLoading(grantBtn, false);
 
+  // 8. Close modal
   var modal = document.getElementById('voiceModal');
   if (modal) modal.classList.remove('open');
   document.body.style.overflow = '';
 };
 
-// -- APP INIT --
-// Single init point, guarded against double-run
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   19. SINGLE INIT POINT
+   BUG FIX: wireButtons() was called twice â€” once in DOMContentLoaded
+   AND once in the immediate readyState check below, registering all
+   event listeners twice. Now only one call path exists.
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function _appInit() {
+  // Prevent double-init
   if (_appInit._done) return;
   _appInit._done = true;
 
@@ -2036,5 +2123,6 @@ function _appInit() {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _appInit);
 } else {
+  // DOM already ready (VS Code Live Server quirk)
   _appInit();
 }
