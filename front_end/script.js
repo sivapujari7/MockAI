@@ -1159,6 +1159,7 @@ var VE = {
   isStarting:   false,
   finalText:    '',
   interimText:  '',
+  lastHeardText: '',
   listenRunId:  0,
   detectedLang: 'en-US',
   userLanguage: 'english',
@@ -1468,6 +1469,7 @@ function VE_handleBargeIn() {
 
   VE.finalText = '';
   VE.interimText = '';
+  VE.lastHeardText = '';
 
   VE_setPhase('listening');
   VE_setStatus(VE_STATUS.listening);
@@ -1497,12 +1499,13 @@ function VE_destroyRec() {
 function VE_getHeardText() {
   var finalText = (VE.finalText || '').trim();
   var interimText = (VE.interimText || '').trim();
+  var lastHeardText = (VE.lastHeardText || '').trim();
 
   if (finalText && interimText && interimText.toLowerCase().indexOf(finalText.toLowerCase()) !== 0) {
     return (finalText + ' ' + interimText).trim();
   }
 
-  return finalText || interimText;
+  return finalText || interimText || lastHeardText;
 }
 
 function VE_restartListen(delay) {
@@ -1546,6 +1549,7 @@ function VE_createRecognition() {
     VE.interimText = interimParts.join(' ').trim();
 
     var heard = VE_getHeardText();
+    if (heard) VE.lastHeardText = heard;
     VE_showTranscript(heard);
 
     if (heard) {
@@ -1574,8 +1578,12 @@ function VE_createRecognition() {
     if (e.error === 'aborted') return;
     if (e.error === 'no-speech') {
       var noSpeechText = VE_getHeardText();
-      if (noSpeechText) VE_submitAnswer(noSpeechText);
-      else VE_restartListen(VE.isMobile ? 650 : 250);
+      if (noSpeechText) {
+        clearTimeout(VE.silenceTimer);
+        VE_submitAnswer(noSpeechText);
+      } else {
+        VE_restartListen(VE.isMobile ? 650 : 250);
+      }
       return;
     }
     if (e.error === 'not-allowed') { showToast('Microphone permission denied.', 'error'); return; }
@@ -1608,6 +1616,7 @@ function VE_doListen() {
   VE.listenRunId++;
   VE.finalText   = '';
   VE.interimText = '';
+  VE.lastHeardText = '';
   clearTimeout(VE.silenceTimer);
 
   VE.rec = VE_createRecognition();
@@ -1875,6 +1884,7 @@ function VE_typeSubmit() {
   inp.value = '';
   VE_stopListening();
   VE.finalText = txt;
+  VE.lastHeardText = txt;
   VE_submitAnswer(txt);
 }
 
@@ -1912,6 +1922,7 @@ window.closeVoiceModal = function() {
   VE.sessionId    = null;
   VE.finalText    = '';
   VE.interimText  = '';
+  VE.lastHeardText = '';
   VE.listenRunId++;
   VE.detectedLang = 'en-US';
   VE.userLanguage = 'english';
