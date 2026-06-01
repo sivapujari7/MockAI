@@ -1,4 +1,4 @@
-﻿
+
 window.onerror = function(msg, src, line, col, err) {
   console.warn('[MockAI Error]', msg, 'at', src + ':' + line);
   // Always force-hide loader even if something explodes
@@ -57,7 +57,7 @@ function showToast(msg, type) {
       document.body.appendChild(t);
     }
     var colors  = { success:'#10b981', error:'#ef4444', info:'#6366f1', warning:'#f59e0b' };
-    var icons   = { success:'âœ“', error:'!', info:'i', warning:'!' };
+    var icons   = { success:'✓“', error:'!', info:'i', warning:'!' };
     var color   = colors[type] || colors.info;
     var icon    = icons[type]  || 'i';
 
@@ -353,7 +353,7 @@ function _initResumeChips() {
       var drop = document.getElementById('dashResumeDrop');
       if (drop && this.files[0]) {
         var dt = drop.querySelector('.drop-text');
-        if (dt) dt.textContent = 'ðŸ“„ ' + this.files[0].name;
+        if (dt) dt.textContent = '📄„ ' + this.files[0].name;
       }
     });
   }
@@ -1693,11 +1693,11 @@ function VE_createRecognition() {
           VE_clearListenTimers();
           VE_submitAnswer(bestText);
         }
-      }, VE.isMobile ? 700 : VE.silenceDelay);
+      }, VE.isMobile ? 1200 : VE.silenceDelay);
 
   if (VE.isMobile) {
 
-  VE_scheduleSubmitFromSpeech(listenRunId, 500);
+  VE_scheduleSubmitFromSpeech(listenRunId, 700);
 
   if (VE.finalText.trim()) {
     try {
@@ -1810,15 +1810,15 @@ function VE_detectLang(text) {
 function VE_updateLangBadge() {
   var el   = document.getElementById('vLangIndicator');
   var isTE = VE.detectedLang === 'te-IN';
-  if (el) { el.textContent = isTE ? 'ðŸ‡®ðŸ‡³ à°¤à±†à°²à±à°—à±' : 'ðŸ‡¬ðŸ‡§ English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
+  if (el) { el.textContent = isTE ? 'ðŸ‡®ðŸ‡³ à°¤à±†à°²à±à°—à±' : '🇬🇧 English'; el.style.color = isTE ? '#f59e0b' : '#06b6d4'; }
 }
 
 
  //  PHASE & UI
 
 var VE_STATUS = {
-  speaking:   'â–¶ Priya is speaking...',
-  listening:  'ðŸŽ¤ Listening â€” speak now',
+  speaking:   ' ☺️Priya is speaking...',
+  listening:  '🎤 Listening â€” speak now',
   processing: 'âŸ³ Processing your answer...',
   idle:       'Ready',
 };

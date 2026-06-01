@@ -1176,3 +1176,40 @@ footer{border-top:1px solid var(--border);padding:60px 0 32px;background:rgba(0,
     display:none;
   }
 }
+/* Voice Interview Mobile Stability */
+.vai-speech-box{
+  min-height:120px;
+  max-height:120px;
+  overflow-y:auto;
+  flex-shrink:0;
+}
+
+.vai-speech-text{
+  overflow-wrap:break-word;
+  word-break:break-word;
+}
+
+.voice-modal-inner{
+  height:95vh;
+  display:flex;
+  flex-direction:column;
+}
+
+#vScreenInterview{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  overflow:hidden;
+}
+
+.vint-topbar{
+  flex-shrink:0;
+}
+
+.vscores-bar{
+  flex-shrink:0;
+}
+
+.vai-speech-box{
+  flex-shrink:0;
+}
