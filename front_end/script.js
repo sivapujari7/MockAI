@@ -1053,7 +1053,7 @@ var VE = {
   state:         'idle',
   isListening:   false,
   isSpeaking:    false,
-  isUserSpeaking: false,
+  wasInterrupted: false,
   
   currentAnswer: '',
   langMode:      'en-IN',
@@ -1064,11 +1064,11 @@ var VE = {
   vadInterval:   null,
   
   // Noise gating parameters
-  noiseThreshold: 0.025,        // Only accept sounds above this level
+  noiseThreshold: 0.03,        // Only accept sounds above this level
   silenceFrames: 0,
   soundFrames:   0,
   silenceTolerance: 8,          // ~320ms of silence before submit
-  soundTolerance:  3,           // ~120ms of sound to trigger speaking
+  soundTolerance:  5,           // ~120ms of sound to trigger speaking
   
   // RMS smoothing for stable detection
   rmsHistory:    [],
@@ -1168,8 +1168,12 @@ function VE_speak(text, onDone) {
   
   VE.synthesis.cancel();
   VE_setAvatarState('speaking');
-  VE.isSpeaking = true;
-  VE_stopVAD();  // Pause VAD while speaking
+ VE.isSpeaking = true;
+
+// KEEP VAD RUNNING SO USER CAN INTERRUPT
+if (!VE.vadActive) {
+  VE_startVAD();
+}
   
   VE_typewriterEffect(text, document.getElementById('vaiSpeechText'));
   
@@ -1184,16 +1188,24 @@ function VE_speak(text, onDone) {
     return v.lang.startsWith('en') && /female|woman|zira|samantha|victoria|google uk english/i.test(v.name);
   });
   if (femaleVoice) utter.voice = femaleVoice;
-  
   utter.onend = function () {
-    console.log('[Voice] Speech ended');
-    if (VE.state === 'speaking') {
-      VE.isSpeaking = false;
-      VE_setAvatarState('listening');
-      VE_startVAD();  // Resume VAD after speaking
-      if (onDone) onDone();
-    }
-  };
+  console.log('[Voice] Speech ended');
+
+  VE.isSpeaking = false;
+
+  if (VE.wasInterrupted) {
+    VE.wasInterrupted = false;
+    return;
+  }
+
+  VE_setAvatarState('listening');
+
+  if (!VE.vadActive) {
+    VE_startVAD();
+  }
+
+  if (onDone) onDone();
+};
   utter.onerror = function (e) {
     console.warn('[Voice] Speech error:', e.error);
     VE.isSpeaking = false;
@@ -1225,6 +1237,7 @@ function VE_typewriterEffect(text, el) {
 
 // ── Start Web Speech Recognition ──
 function VE_startListening() {
+  if (VE.isListening) return;
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
     showToast('Speech recognition not supported.', 'warning');
@@ -1278,15 +1291,24 @@ function VE_startListening() {
   };
   
   VE.recognition.onerror = function (e) {
-    console.warn('[Voice] Error:', e.error);
-    if (e.error === 'network') {
-      setTimeout(function () {
-        if (VE.isListening && VE.state === 'listening') {
-          VE_startListening();
-        }
-      }, 1000);
-    }
-  };
+  console.warn('[Voice] Error:', e.error);
+
+  VE.isListening = false;
+
+  if (
+    ['network', 'no-speech', 'aborted'].includes(e.error)
+  ) {
+    setTimeout(function () {
+      if (
+        VE.interviewId &&
+        !VE.isListening &&
+        VE.state !== 'thinking'
+      ) {
+        VE_startListening();
+      }
+    }, 500);
+  }
+};
   
   VE.recognition.onend = function () {
     console.log('[Voice] Recognition ended');
@@ -1381,10 +1403,19 @@ function VE_vadMonitor() {
       // ⚡ INTERRUPT AI IMMEDIATELY ⚡
       if (VE.isSpeaking) {
         console.log('[VAD] INTERRUPTING AI!');
-        if (VE.synthesis) {
-          VE.synthesis.cancel();
-        }
-        VE.isSpeaking = false;
+   VE.wasInterrupted = true;
+
+if (VE.synthesis) {
+  VE.synthesis.cancel();
+}
+
+VE.isSpeaking = false;
+VE_setAvatarState('listening');
+VE_setAvatarState('listening');
+
+if (!VE.isListening) {
+  VE_startListening();
+}
         
         // Show interrupt UI
         var fb = document.getElementById('vInterruptionFeedback');
@@ -1499,12 +1530,11 @@ async function VE_grantAndStart() {
   try {
     // Mobile-optimized audio constraints
     var constraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: false,  // Let us control gain
-        sampleRate: 16000
-      }
+     audio: {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true
+}
     };
     VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log('[Voice] Mic granted');
@@ -1520,10 +1550,17 @@ async function VE_grantAndStart() {
     VE.interviewId = started.interview._id;
     console.log('[Voice] Interview started:', VE.interviewId);
   } catch (err) {
-    setLoading(btn, false);
-    showToast('Start failed.', 'error');
-    return;
-  }
+  console.error('INTERVIEW START ERROR:', err);
+
+  setLoading(btn, false);
+
+  showToast(
+    err?.message || 'Start failed.',
+    'error'
+  );
+
+  return;
+}
   
   setLoading(btn, false);
   
@@ -1539,7 +1576,7 @@ async function VE_grantAndStart() {
   // Then Priya speaks
   var intro = "Hello! I'm Priya, your AI interview coach. Tell me about yourself and your background.";
   VE_speak(intro, function () {
-    VE_startVAD();  // Start VAD monitoring after intro
+     VE_startListening(); // Start VAD monitoring after intro
   });
 }
 
