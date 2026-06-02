@@ -27,14 +27,24 @@ app.use((req, res, next) => {
 app.use(helmet({ contentSecurityPolicy: false }));
 
 const defaultClientUrls = [
+  'http://localhost:10000',
+  'http://127.0.0.1:10000',
+
   'http://localhost:5500',
   'http://127.0.0.1:5500',
+
+  'http://localhost:5502',
+  'http://127.0.0.1:5502',
+
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+
   'http://localhost:5001',
   'http://127.0.0.1:5001',
-];
 
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+];
 const envClientUrls = [
   process.env.CLIENT_URL,
   process.env.CLIENT_URLS,
@@ -100,7 +110,6 @@ const rootHandler = (req, res) => {
   });
 };
 app.get('/api', rootHandler);
-app.get('/', rootHandler);
 
 const healthHandler = (req, res) => {
   res.json({

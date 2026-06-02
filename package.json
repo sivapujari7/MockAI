@@ -8,6 +8,7 @@
     "dev": "node back_end/server.js"
   },
   "dependencies": {
+    "@cline/sdk": "^0.0.42",
     "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

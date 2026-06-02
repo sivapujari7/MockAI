@@ -1032,57 +1032,93 @@ function loadSettingsPanel() {
     + '<div class="sf-field"><div class="sf-label">Plan</div><input class="sf-input" value="' + _esc(user.plan || 'Free') + '" readonly /></div>'
     + '</div>';
 }
-
 /* ════════════════════════════════════
-   VOICE INTERVIEW ENGINE
+   VOICE INTERVIEW ENGINE V3 — PREMIUM
+   ✓ Proper user voice detection
+   ✓ Fast interruption
+   ✓ Mobile optimized
+   ✓ Noise rejection
 ════════════════════════════════════ */
 
-// Voice interview state
 var VE = {
-  interviewId:   null,       // backend interview session ID
-  recognition:   null,       // SpeechRecognition instance
+  interviewId:   null,
+  recognition:   null,
   synthesis:     window.speechSynthesis || null,
+  stream:        null,
+  audioContext:  null,
+  analyser:      null,
+  source:        null,
+  scriptProcessor: null,
+  
+  state:         'idle',
   isListening:   false,
   isSpeaking:    false,
-  silenceTimer:  null,
-  silenceDelay:  1500,       // fallback silence ms before auto-submitting
-  currentAnswer: '',         // accumulated transcript for current question
-  langMode:      'en-IN',    // default language (auto-switches on Telugu detection)
+  isUserSpeaking: false,
+  
+  currentAnswer: '',
+  langMode:      'en-IN',
   teluguWords:   ['నమస్కారం','మీరు','నేను','ఏమి','అవును','కాదు','చేస్తాను','చేశాను','అని','కానీ'],
-
-  // Advanced Voice VAD & Interruption States
-  state:          'idle',     // 'idle' | 'listening' | 'thinking' | 'speaking'
-  stream:         null,       // Mic stream
-  audioContext:   null,       // Web Audio Context
-  analyser:       null,       // AnalyserNode
-  source:         null,       // SourceNode
-  vadInterval:    null,       // requestAnimationFrame loop reference
-  noSpeechTimer:  null,       // absolute silence fallback timer (3s)
-  isUserSpeaking: false,      // user active speaking state
-  speechCounter:  0,          // speech signal persistence frames
-  silenceCounter: 0,          // silence persistence frames
-
-  // Threshold configurations
-  vadThreshold:   0.012,      // amplitude RMS threshold for speech detection
-  vadSpeechMin:   3,          // ~60ms above threshold to trigger speech start
-  vadSilenceMin:  35,         // ~580ms below threshold to trigger speech end (VAD)
+  
+  // ── Advanced VAD with noise rejection ──
+  vadActive:     false,
+  vadInterval:   null,
+  
+  // Noise gating parameters
+  noiseThreshold: 0.025,        // Only accept sounds above this level
+  silenceFrames: 0,
+  soundFrames:   0,
+  silenceTolerance: 8,          // ~320ms of silence before submit
+  soundTolerance:  3,           // ~120ms of sound to trigger speaking
+  
+  // RMS smoothing for stable detection
+  rmsHistory:    [],
+  rmsHistorySize: 5,
+  minDecibels:   -100,
+  maxDecibels:   -10,
 };
 
-// Opens the voice modal and shows the permission/intro screen
+// ── Open voice modal ──
 function startVoiceInterview() {
   var modal = document.getElementById('voiceModal');
   if (modal) modal.classList.add('open');
 }
 window.startVoiceInterview = startVoiceInterview;
 
-// Clean up all Web Audio, stream, and timer resources
-function VE_cleanupAudio() {
-  clearTimeout(VE.silenceTimer);
-  clearTimeout(VE.noSpeechTimer);
+// ── Close voice modal & cleanup ──
+function closeVoiceModal() {
+  VE_cleanupAll();
+  var modal = document.getElementById('voiceModal');
+  if (modal) modal.classList.remove('open');
   
-  if (VE.vadInterval) {
-    cancelAnimationFrame(VE.vadInterval);
-    VE.vadInterval = null;
+  var perm = document.getElementById('vScreenPermission');
+  var intv = document.getElementById('vScreenInterview');
+  if (perm) perm.style.display = '';
+  if (intv) intv.style.display = 'none';
+  
+  VE_setAvatarState('idle');
+}
+window.closeVoiceModal = closeVoiceModal;
+
+// ── Complete cleanup ──
+function VE_cleanupAll() {
+  VE_stopVAD();
+  VE_stopListening();
+  if (VE.synthesis) {
+    try { VE.synthesis.cancel(); } catch (e) {}
+  }
+  VE_closeAudio();
+  
+  if (VE.interviewId && typeof interviewComplete === 'function') {
+    interviewComplete(VE.interviewId, 0).catch(function () {});
+  }
+  VE.interviewId = null;
+}
+
+// ── Close audio context ──
+function VE_closeAudio() {
+  if (VE.scriptProcessor) {
+    try { VE.scriptProcessor.disconnect(); } catch (e) {}
+    VE.scriptProcessor = null;
   }
   if (VE.source) {
     try { VE.source.disconnect(); } catch (e) {}
@@ -1092,111 +1128,88 @@ function VE_cleanupAudio() {
     try { VE.analyser.disconnect(); } catch (e) {}
     VE.analyser = null;
   }
-  if (VE.audioContext) {
+  if (VE.audioContext && VE.audioContext.state !== 'closed') {
     try { VE.audioContext.close(); } catch (e) {}
     VE.audioContext = null;
   }
   if (VE.stream) {
     try {
-      VE.stream.getTracks().forEach(function (track) { track.stop(); });
+      VE.stream.getTracks().forEach(function (t) { t.stop(); });
     } catch (e) {}
     VE.stream = null;
   }
-  
-  VE.isUserSpeaking = false;
-  VE.speechCounter = 0;
-  VE.silenceCounter = 0;
 }
 
-// Closes the voice modal and cleans up all resources
-function closeVoiceModal() {
-  VE_stopListening();
-  VE_cleanupAudio();
-  if (VE.synthesis) VE.synthesis.cancel();
-  
-  if (VE.interviewId) {
-    if (typeof interviewComplete === 'function') {
-      interviewComplete(VE.interviewId, 0).catch(function () {});
-    }
-    VE.interviewId = null;
-  }
-  var modal = document.getElementById('voiceModal');
-  if (modal) modal.classList.remove('open');
-
-  // Reset to permission screen for next time
-  var perm = document.getElementById('vScreenPermission');
-  var intv = document.getElementById('vScreenInterview');
-  if (perm) perm.style.display = '';
-  if (intv) intv.style.display = 'none';
-
-  VE_setAvatarState('idle');
-}
-window.closeVoiceModal = closeVoiceModal;
-
-/* ── Avatar state management ── */
-// state: 'idle' | 'speaking' | 'listening' | 'thinking'
+// ── Avatar state ──
 function VE_setAvatarState(state) {
   VE.state = state;
-  var wrap   = document.getElementById('vaiWrap');
+  var wrap = document.getElementById('vaiWrap');
   var status = document.getElementById('vaiStatus');
   if (!wrap) return;
-
+  
   wrap.classList.remove('speaking', 'listening', 'thinking');
   if (state !== 'idle') wrap.classList.add(state);
-
+  
   var labels = {
     idle:      'Ready',
     speaking:  'Priya is speaking…',
     listening: 'Listening to you…',
-    thinking:  'Thinking…'
+    thinking:  'Processing your answer…'
   };
   if (status) status.textContent = labels[state] || '';
 }
 
-/* ── Text-to-speech: Priya speaks a question ── */
+// ── Priya speaks ──
 function VE_speak(text, onDone) {
   if (!VE.synthesis) {
     if (onDone) onDone();
     return;
   }
-
+  
   VE.synthesis.cancel();
   VE_setAvatarState('speaking');
   VE.isSpeaking = true;
-
-  // Show the text in the speech bubble with a typewriter effect
+  VE_stopVAD();  // Pause VAD while speaking
+  
   VE_typewriterEffect(text, document.getElementById('vaiSpeechText'));
-
+  
   var utter = new SpeechSynthesisUtterance(text);
-  utter.lang  = 'en-IN';
-  utter.rate  = 0.92;
+  utter.lang = 'en-IN';
+  utter.rate = 0.92;
   utter.pitch = 1.05;
-
-  // Pick a female voice if available
+  utter.volume = 1;
+  
   var voices = VE.synthesis.getVoices();
   var femaleVoice = voices.find(function (v) {
-    return v.lang.startsWith('en') && /female|woman|zira|samantha|victoria/i.test(v.name);
+    return v.lang.startsWith('en') && /female|woman|zira|samantha|victoria|google uk english/i.test(v.name);
   });
   if (femaleVoice) utter.voice = femaleVoice;
-
+  
   utter.onend = function () {
+    console.log('[Voice] Speech ended');
     if (VE.state === 'speaking') {
       VE.isSpeaking = false;
       VE_setAvatarState('listening');
+      VE_startVAD();  // Resume VAD after speaking
       if (onDone) onDone();
     }
   };
-  utter.onerror = function () {
-    if (VE.state === 'speaking') {
-      VE.isSpeaking = false;
-      if (onDone) onDone();
-    }
+  utter.onerror = function (e) {
+    console.warn('[Voice] Speech error:', e.error);
+    VE.isSpeaking = false;
+    VE_startVAD();
+    if (onDone) onDone();
   };
-
-  VE.synthesis.speak(utter);
+  
+  try {
+    VE.synthesis.speak(utter);
+  } catch (e) {
+    console.warn('[Voice] Speak failed:', e);
+    if (onDone) onDone();
+  }
 }
 
-/* ── Typewriter effect for the speech bubble ── */
+// ── Typewriter effect ──
 function VE_typewriterEffect(text, el) {
   if (!el) return;
   el.textContent = '';
@@ -1210,364 +1223,364 @@ function VE_typewriterEffect(text, el) {
   }, 28);
 }
 
-/* ── Speech recognition: listen for user's answer ── */
-function VE_startListening(isBargeIn) {
+// ── Start Web Speech Recognition ──
+function VE_startListening() {
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    showToast('Speech recognition not supported in this browser. Please type your answer.', 'warning');
+    showToast('Speech recognition not supported.', 'warning');
     return;
   }
-
-  clearTimeout(VE.silenceTimer);
-  clearTimeout(VE.noSpeechTimer);
-
+  
   if (VE.recognition) {
     try { VE.recognition.abort(); } catch (e) {}
-    VE.recognition = null;
   }
-
-  var isAndroid = /Android/i.test(navigator.userAgent);
-
+  
   VE.recognition = new SpeechRecognition();
-  // Mobile devices and barge-in work infinitely better with continuous = false
-  VE.recognition.continuous     = isAndroid ? false : !isBargeIn;
+  VE.recognition.continuous = true;
   VE.recognition.interimResults = true;
-  VE.recognition.lang           = VE.langMode;
-  VE.currentAnswer              = '';
-
+  VE.recognition.lang = VE.langMode;
+  VE.currentAnswer = '';
+  VE.isListening = true;
+  
   VE.recognition.onstart = function () {
-    VE.isListening = true;
+    console.log('[Voice] Listening started');
     VE_setAvatarState('listening');
-
-    // absolute 3 second timeout fallback if they don't say anything
-    clearTimeout(VE.noSpeechTimer);
-    VE.noSpeechTimer = setTimeout(function () {
-      if (VE.state === 'listening' && !VE.isUserSpeaking) {
-        console.log('[Voice Fallback] No speech detected for 3 seconds. Stop.');
-        VE_stopListening();
-        VE_setAvatarState('idle');
-      }
-    }, 3000);
   };
-
+  
   VE.recognition.onresult = function (event) {
-    clearTimeout(VE.noSpeechTimer);
-
     var finalText = '';
     var interimText = '';
-
+    
     for (var i = event.resultIndex; i < event.results.length; i++) {
       var transcript = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
         finalText += transcript + ' ';
+        VE.silenceFrames = 0;  // Reset silence on new input
       } else {
         interimText += transcript;
       }
     }
-
+    
     if (finalText) {
       VE.currentAnswer += finalText;
-      // Auto-detect Telugu and switch language indicator
+      
+      // Auto-detect Telugu
       var istelugu = VE.teluguWords.some(function (w) { return finalText.includes(w); });
       if (istelugu) {
         VE.langMode = 'te-IN';
         var li = document.getElementById('vLangIndicator');
         if (li) li.textContent = '🇮🇳 Telugu';
-        var lv = document.getElementById('vLangVal');
-        if (lv) lv.textContent = 'Telugu';
       }
     }
-
-    // Show the running transcript
+    
     var transcript = document.getElementById('vuserTranscript');
     if (transcript) transcript.textContent = VE.currentAnswer + interimText;
   };
-
+  
   VE.recognition.onerror = function (e) {
-    if (e.error !== 'no-speech') {
-      console.warn('[Voice] Recognition error:', e.error);
+    console.warn('[Voice] Error:', e.error);
+    if (e.error === 'network') {
+      setTimeout(function () {
+        if (VE.isListening && VE.state === 'listening') {
+          VE_startListening();
+        }
+      }, 1000);
     }
   };
-
+  
   VE.recognition.onend = function () {
+    console.log('[Voice] Recognition ended');
     VE.isListening = false;
-    
-    // Auto-restart IF AND ONLY IF we are still actively waiting for input
     if (VE.state === 'listening' && VE.interviewId) {
-      if (isAndroid) {
-        // android gets stuck easily: destroy and start clean
-        try { VE.recognition.abort(); } catch (err) {}
-        VE.recognition = null;
-      }
       setTimeout(function () {
         if (VE.state === 'listening') {
-          VE_startListening(isBargeIn);
+          VE_startListening();
         }
-      }, 300);
+      }, 500);
     }
   };
-
+  
   try { VE.recognition.start(); }
-  catch (e) { console.warn('[Voice] Could not start recognition:', e); }
+  catch (e) { console.warn('[Voice] Start failed:', e); }
 }
 
+// ── Stop listening ──
 function VE_stopListening() {
-  clearTimeout(VE.silenceTimer);
-  clearTimeout(VE.noSpeechTimer);
   if (VE.recognition) {
     try { VE.recognition.stop(); } catch (e) {}
     try { VE.recognition.abort(); } catch (e) {}
-    VE.recognition = null;
   }
   VE.isListening = false;
 }
 
-/* ── Web Audio VAD Initialization & Loop ── */
-function VE_initVAD(stream) {
-  if (!stream) return;
+// ── Start VAD monitoring ──
+function VE_startVAD() {
+  if (!VE.stream || VE.vadActive) return;
+  
+  console.log('[VAD] Starting...');
+  VE.vadActive = true;
+  VE.silenceFrames = 0;
+  VE.soundFrames = 0;
+  VE.rmsHistory = [];
+  
   try {
     var AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
-
+    
+    if (VE.audioContext && VE.audioContext.state !== 'closed') {
+      try { VE.audioContext.close(); } catch (e) {}
+    }
+    
     VE.audioContext = new AudioContext();
     VE.analyser = VE.audioContext.createAnalyser();
     VE.analyser.fftSize = 512;
-
-    VE.source = VE.audioContext.createMediaStreamSource(stream);
-    VE.source.connect(VE.analyser);
-
-    VE_monitorAudio();
-  } catch (e) {
-    console.warn('[VAD] Web Audio API failed to init:', e);
-  }
-}
-
-function VE_monitorAudio() {
-  if (!VE.analyser || !VE.interviewId) return;
-
-  var bufferLength = VE.analyser.frequencyBinCount;
-  var dataArray = new Float32Array(bufferLength);
-
-  function checkVolume() {
-    if (!VE.analyser || !VE.interviewId) return;
-
-    VE.analyser.getFloatTimeDomainData(dataArray);
-
-    // Calculate RMS volume level
-    var sum = 0;
-    for (var i = 0; i < bufferLength; i++) {
-      sum += dataArray[i] * dataArray[i];
-    }
-    var rms = Math.sqrt(sum / bufferLength);
-
-    if (rms > VE.vadThreshold) {
-      VE.speechCounter++;
-      VE.silenceCounter = 0;
-
-      // Detect user speech start
-      if (VE.speechCounter >= VE.vadSpeechMin) {
-        if (!VE.isUserSpeaking) {
-          VE.isUserSpeaking = true;
-          VE_onUserSpeechStart();
-        }
-      }
-    } else {
-      VE.silenceCounter++;
-      VE.speechCounter = 0;
-
-      // Detect user speech end (silence threshold 500-800ms)
-      if (VE.silenceCounter >= VE.vadSilenceMin) {
-        if (VE.isUserSpeaking) {
-          VE.isUserSpeaking = false;
-          VE_onUserSpeechEnd();
-        }
-      }
-    }
-
-    VE.vadInterval = requestAnimationFrame(checkVolume);
-  }
-
-  VE.vadInterval = requestAnimationFrame(checkVolume);
-}
-
-// Interruption & Barge-in trigger
-function VE_onUserSpeechStart() {
-  console.log('[VAD] Speech started.');
-  clearTimeout(VE.noSpeechTimer);
-
-  // If AI is talking, interrupt instantly!
-  if (VE.state === 'speaking' || VE.isSpeaking) {
-    console.log('[VAD Interruption] Interrupted AI mid-speech.');
+    VE.analyser.minDecibels = VE.minDecibels;
+    VE.analyser.maxDecibels = VE.maxDecibels;
     
-    // Stop synthesis
-    if (VE.synthesis) {
-      VE.synthesis.cancel();
-    }
-    VE.isSpeaking = false;
-
-    // Show Interruption UI feedback
-    var fb = document.getElementById('vInterruptionFeedback');
-    if (fb) {
-      fb.style.display = 'flex';
-      fb.style.opacity = '1';
-      setTimeout(function () {
-        fb.style.opacity = '0';
-        setTimeout(function () { fb.style.display = 'none'; }, 300);
-      }, 1200);
-    }
-
-    showToast('Interruption detected! Listening to you...', 'info');
-
-    // Instantly transition state and open speech recorder
-    VE_setAvatarState('listening');
-    VE_startListening(true); // true = barge-in mode
+    VE.source = VE.audioContext.createMediaStreamSource(VE.stream);
+    VE.source.connect(VE.analyser);
+    
+    VE_vadMonitor();
+  } catch (e) {
+    console.warn('[VAD] Init failed:', e);
   }
 }
 
-function VE_onUserSpeechEnd() {
-  console.log('[VAD] Speech ended.');
-
-  if (VE.state === 'listening' && VE.isListening) {
-    var transcriptEl = document.getElementById('vuserTranscript');
-    var finalAnswer = (VE.currentAnswer || '').trim();
-    if (transcriptEl && transcriptEl.textContent.trim()) {
-      finalAnswer = transcriptEl.textContent.trim();
+// ── VAD monitoring loop ──
+function VE_vadMonitor() {
+  if (!VE.vadActive || !VE.analyser) return;
+  
+  var dataArray = new Float32Array(VE.analyser.frequencyBinCount);
+  VE.analyser.getFloatTimeDomainData(dataArray);
+  
+  // Calculate RMS (root mean square)
+  var sum = 0;
+  for (var i = 0; i < dataArray.length; i++) {
+    sum += dataArray[i] * dataArray[i];
+  }
+  var rms = Math.sqrt(sum / dataArray.length);
+  
+  // Smooth RMS with history
+  VE.rmsHistory.push(rms);
+  if (VE.rmsHistory.length > VE.rmsHistorySize) {
+    VE.rmsHistory.shift();
+  }
+  var avgRms = VE.rmsHistory.reduce(function (a, b) { return a + b; }, 0) / VE.rmsHistory.length;
+  
+  // ── MAIN INTERRUPT LOGIC ──
+  if (avgRms > VE.noiseThreshold) {
+    // Sound detected
+    VE.soundFrames++;
+    VE.silenceFrames = 0;
+    
+    // If user just started speaking
+    if (VE.soundFrames >= VE.soundTolerance && !VE.isUserSpeaking) {
+      VE.isUserSpeaking = true;
+      console.log('[VAD] User speaking detected');
+      
+      // ⚡ INTERRUPT AI IMMEDIATELY ⚡
+      if (VE.isSpeaking) {
+        console.log('[VAD] INTERRUPTING AI!');
+        if (VE.synthesis) {
+          VE.synthesis.cancel();
+        }
+        VE.isSpeaking = false;
+        
+        // Show interrupt UI
+        var fb = document.getElementById('vInterruptionFeedback');
+        if (fb) {
+          fb.style.display = 'flex';
+          fb.style.opacity = '1';
+          setTimeout(function () {
+            fb.style.opacity = '0';
+            setTimeout(function () { fb.style.display = 'none'; }, 300);
+          }, 1200);
+        }
+        showToast('Listening...', 'info');
+      }
     }
-
-    if (finalAnswer) {
-      console.log('[VAD] Auto-submitting due to speech end silence:', finalAnswer);
-      VE_submitAnswer(finalAnswer);
+  } else {
+    // Silence detected
+    VE.soundFrames = 0;
+    
+    if (VE.isUserSpeaking) {
+      VE.silenceFrames++;
+      
+      // If silence long enough & we have answer
+      if (VE.silenceFrames >= VE.silenceTolerance) {
+        var answer = VE.currentAnswer.trim();
+        var wordCount = answer.split(/\s+/).filter(function (w) { return w.length > 0; }).length;
+        
+        // Need at least 2 words
+        if (wordCount >= 2) {
+          console.log('[VAD] Submitting answer after silence');
+          VE.isUserSpeaking = false;
+          VE_submitAnswer();
+          VE.vadActive = false;
+          return;
+        }
+      }
     }
   }
+  
+  VE.vadInterval = requestAnimationFrame(VE_vadMonitor);
 }
 
-/* ── Submit a voice answer to the backend AI ── */
-async function VE_submitAnswer(answer) {
+// ── Stop VAD ──
+function VE_stopVAD() {
+  VE.vadActive = false;
+  if (VE.vadInterval) {
+    cancelAnimationFrame(VE.vadInterval);
+    VE.vadInterval = null;
+  }
+  VE.isUserSpeaking = false;
+}
+
+// ── Submit answer ──
+async function VE_submitAnswer() {
+  var answer = VE.currentAnswer.trim();
   if (!answer || !VE.interviewId) return;
+  
   VE_stopListening();
   VE_setAvatarState('thinking');
-
-  // Show what the user said in the transcript box
+  
   var transcript = document.getElementById('vuserTranscript');
   if (transcript) transcript.textContent = answer;
   VE.currentAnswer = '';
-
+  
   try {
+    console.log('[Voice] Sending:', answer);
     var data = await interviewMessage(VE.interviewId, answer);
-
-    // Update voice score displays
+    console.log('[Voice] Response received');
+    
+    // Update scores
     if (data.feedback) {
       var f = data.feedback;
-      var setVScore = function (id, val) {
-        var el = document.getElementById(id);
-        if (el) el.textContent = val ? val + '%' : '—';
-      };
-      setVScore('vConfVal', f.confidenceScore);
-      setVScore('vCommVal', f.communicationScore);
-      setVScore('vTechVal', f.technicalScore);
+      document.getElementById('vConfVal').textContent = f.confidenceScore ? f.confidenceScore + '%' : '—';
+      document.getElementById('vCommVal').textContent = f.communicationScore ? f.communicationScore + '%' : '—';
+      document.getElementById('vTechVal').textContent = f.technicalScore ? f.technicalScore + '%' : '—';
     }
-
-    // Priya speaks the AI's response, then starts listening again
+    
+    // Priya responds
     if (data.aiMessage) {
       VE_speak(data.aiMessage, function () {
         if (VE.state === 'speaking' || VE.state === 'listening') {
-          VE_startListening();
+          setTimeout(function () {
+            VE_startListening();
+            VE_startVAD();
+          }, 300);
         }
       });
-    } else {
-      if (VE.state === 'thinking') {
-        VE_setAvatarState('listening');
-        VE_startListening();
-      }
     }
   } catch (err) {
-    showToast('AI response error: ' + (err.message || 'Try again'), 'error');
-    if (VE.state === 'thinking') {
-      VE_setAvatarState('listening');
-      VE_startListening();
-    }
+    console.error('[Voice] Error:', err);
+    showToast('Error: ' + (err.message || 'Try again'), 'error');
+    VE_setAvatarState('listening');
+    VE_startListening();
+    VE_startVAD();
   }
 }
 
-/* ── Grant mic permission and start the voice interview ── */
+// ── Grant permission & start ──
 async function VE_grantAndStart() {
   var btn = document.getElementById('vGrantMicBtn');
   setLoading(btn, true);
-
-  try {
-    // Request microphone permission and store it
-    VE.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Initialize Web Audio VAD analyser
-    VE_initVAD(VE.stream);
-  } catch (err) {
-    setLoading(btn, false);
-    showToast('Microphone access denied. Please allow mic access and try again.', 'error');
-    return;
-  }
-
-  // Check login
+  
+  // Check login FIRST
   var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
   if (!loggedIn) {
     setLoading(btn, false);
     closeVoiceModal();
     openAuthModal('login');
-    showToast('Sign in to start a voice interview.', 'info');
+    showToast('Sign in first.', 'info');
     return;
   }
-
+  
   try {
-    // Start a new interview session on the backend
-    var started = await interviewStart('Software Engineer', 'General', 'mixed', 'intermediate');
-    VE.interviewId = started.interview._id;
+    // Mobile-optimized audio constraints
+    var constraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,  // Let us control gain
+        sampleRate: 16000
+      }
+    };
+    VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('[Voice] Mic granted');
   } catch (err) {
     setLoading(btn, false);
-    showToast('Could not start interview: ' + (err.message || 'Server error'), 'error');
+    console.error('[Voice] Mic error:', err);
+    showToast('Mic denied. Allow permission.', 'error');
     return;
   }
-
+  
+  try {
+    var started = await interviewStart('Software Engineer', 'General', 'mixed', 'intermediate');
+    VE.interviewId = started.interview._id;
+    console.log('[Voice] Interview started:', VE.interviewId);
+  } catch (err) {
+    setLoading(btn, false);
+    showToast('Start failed.', 'error');
+    return;
+  }
+  
   setLoading(btn, false);
-
-  // Switch from permission screen to active interview screen
+  
+  // Switch UI
   var perm = document.getElementById('vScreenPermission');
   var intv = document.getElementById('vScreenInterview');
   if (perm) perm.style.display = 'none';
   if (intv) intv.style.display = '';
-
-  // Priya introduces herself and asks the first question
-  var intro = "Hello! I'm Priya, your AI interview coach. Let's begin. Tell me about yourself and your background.";
+  
+  // Start listening first
+  VE_startListening();
+  
+  // Then Priya speaks
+  var intro = "Hello! I'm Priya, your AI interview coach. Tell me about yourself and your background.";
   VE_speak(intro, function () {
-    VE_startListening();
+    VE_startVAD();  // Start VAD monitoring after intro
   });
 }
 
-/* ── Wire up the voice modal buttons ── */
+// ── Initialize ──
 function _initVoiceModal() {
   var grantBtn = document.getElementById('vGrantMicBtn');
   if (grantBtn) grantBtn.addEventListener('click', VE_grantAndStart);
-
-  // Typed answer fallback — user can type if mic doesn't work
+  
+  // Typed fallback
   var vtypeInput = document.getElementById('vtypeInput');
-  var vtypeSend  = document.getElementById('vtypeSend');
-
+  var vtypeSend = document.getElementById('vtypeSend');
+  
   function submitTyped() {
     var val = vtypeInput && vtypeInput.value.trim();
     if (!val) return;
     if (vtypeInput) vtypeInput.value = '';
-    VE_submitAnswer(val);
+    VE.currentAnswer = val;
+    VE_submitAnswer();
   }
-
-  if (vtypeSend)  vtypeSend.addEventListener('click', submitTyped);
+  
+  if (vtypeSend) vtypeSend.addEventListener('click', submitTyped);
   if (vtypeInput) vtypeInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); submitTyped(); }
   });
 }
-
 /* ════════════════════════════════════
    DASHBOARD TAB WIRING
 ════════════════════════════════════ */
 
 // Wires click handlers to all dashboard top tabs and sidebar items.
 // Must run after DOMContentLoaded so the elements exist.
+// ── Smart voice interview start ──
+function VE_voiceStart() {
+  var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+  if (!loggedIn) {
+    openAuthModal('login');
+    showToast('Sign in to start voice interview.', 'info');
+    return;
+  }
+  startVoiceInterview();
+}
 function _initDashboardTabs() {
   document.querySelectorAll('.dash-tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -1609,7 +1622,18 @@ document.addEventListener('DOMContentLoaded', function () {
   // All "Get Started" buttons across the page open the register tab
   ['navGetStarted', 'heroStart', 'ctaStart', 'mobileGetStarted'].forEach(function (id) {
     var btn = document.getElementById(id);
-    if (btn) btn.addEventListener('click', function () { openAuthModal('register'); });
+    if (btn) {
+      btn.addEventListener('click', function () {
+        var loggedIn = (typeof isLoggedIn === 'function') ? isLoggedIn() : false;
+        if (loggedIn) {
+          // Already signed in — go to AI interview
+          document.getElementById('ai-panel').scrollIntoView({ behavior: 'smooth' });
+        } else {
+          // Not signed in — show register modal
+          openAuthModal('register');
+        }
+      });
+    }
   });
 
   // ── Sign In button in sessions panel ──

@@ -225,7 +225,7 @@ section{position:relative;overflow:hidden;padding:120px 0}
   border-bottom:1px solid transparent;
 }
 #nav.scrolled{
-  background:rgba(10,10,10,0.92);
+  background:rgba(90, 201, 238, 0.92);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   padding:14px 0;border-bottom-color:var(--border);
 }

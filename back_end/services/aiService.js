@@ -34,7 +34,7 @@ function toOpenAiMessages(messages = []) {
     .filter((message) => message && message.content)
     .map((message) => ({
       role: message.role === 'user' ? 'user' : 'assistant',
-      content: String(message.content).slice(0, 3000),
+      content: String(message.content).slice(0, 1200),
     }));
 }
 
@@ -104,8 +104,8 @@ async function generateInterviewResponse({
 
   const response = await getClient().chat.completions.create({
     model: AI_MODEL,
-    temperature: 0.85,
-    max_tokens: 420,
+    temperature: 0.7,
+    max_tokens: 180,
     messages: [
       {
         role: 'system',
