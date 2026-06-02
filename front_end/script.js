@@ -1169,6 +1169,7 @@ function VE_speak(text, onDone) {
   VE.synthesis.cancel();
   VE_setAvatarState('speaking');
  VE.isSpeaking = true;
+ VE_stopListening();
 
 // KEEP VAD RUNNING SO USER CAN INTERRUPT
 if (!VE.vadActive) {
@@ -1249,7 +1250,7 @@ function VE_startListening() {
   }
   
   VE.recognition = new SpeechRecognition();
-  VE.recognition.continuous = true;
+  VE.recognition.continuous = false;
   VE.recognition.interimResults = true;
   VE.recognition.lang = VE.langMode;
   VE.currentAnswer = '';
@@ -1310,17 +1311,26 @@ function VE_startListening() {
   }
 };
   
-  VE.recognition.onend = function () {
-    console.log('[Voice] Recognition ended');
-    VE.isListening = false;
-    if (VE.state === 'listening' && VE.interviewId) {
-      setTimeout(function () {
-        if (VE.state === 'listening') {
-          VE_startListening();
-        }
-      }, 500);
-    }
-  };
+ VE.recognition.onend = function () {
+  console.log('[Voice] Recognition ended');
+
+  VE.isListening = false;
+
+  // Mobile browsers often stop recognition by themselves.
+  // Only restart if we're actively waiting for the user.
+  if (
+    VE.interviewId &&
+    VE.state === 'listening' &&
+    !VE.isSpeaking &&
+    !VE.isUserSpeaking
+  ) {
+    setTimeout(function () {
+      if (!VE.isListening) {
+        VE_startListening();
+      }
+    }, 1500);
+  }
+};
   
   try { VE.recognition.start(); }
   catch (e) { console.warn('[Voice] Start failed:', e); }
