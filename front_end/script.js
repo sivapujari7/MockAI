@@ -1052,6 +1052,7 @@ var VE = {
 
   // ANDROID FIX #1 — track TTS timeout so we can cancel it
   _speakTimeoutId: null,
+  _vadLockoutUntil: 0,
 
   state:         'idle',
   isListening:   false,
@@ -1443,8 +1444,13 @@ function VE_startVAD() {
 function VE_vadMonitor() {
   if (!VE.vadActive || !VE.analyser) return;
 
-  // ANDROID FIX #3 — skip frames while AudioContext is suspended
   if (VE.audioContext && VE.audioContext.state === 'suspended') {
+    VE.vadInterval = requestAnimationFrame(VE_vadMonitor);
+    return;
+  }
+
+  // Interruption Lockout: Prevent immediate re-trigger from AI voice tails
+  if (Date.now() < VE._vadLockoutUntil) {
     VE.vadInterval = requestAnimationFrame(VE_vadMonitor);
     return;
   }
@@ -1474,38 +1480,36 @@ function VE_vadMonitor() {
     }
   }
 
-  // ANDROID FIX #4 — raised multipliers to reduce false triggers from
-  // high-gain mobile mics. Interrupt threshold is now 5x (was 3x).
-  var dynamicThreshold = Math.max(0.030, VE.minRms * 1.8 + 0.010);
-  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 5.0) : dynamicThreshold;
+  // Mobile-specific high-gain thresholds
+  var dynamicThreshold = Math.max(0.040, VE.minRms * 2.0 + 0.020);
+  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 6.0) : dynamicThreshold;
 
-  // Grace period: ignore interruptions for the first 800ms of AI speech
-  if (VE.isSpeaking && (Date.now() - VE.speakingStartTime < 800)) {
-    currentThreshold = 1.0; // Effectively mute VAD interruptions
+  // Absolute mute during the first 1s of AI speech to kill "initial burst" loops
+  if (VE.isSpeaking && (Date.now() - VE.speakingStartTime < 1000)) {
+    currentThreshold = 1.0;
   }
 
   if (avgRms > currentThreshold) {
-    console.log('[VAD]', 'speaking=', VE.isSpeaking, 'rms=', avgRms.toFixed(4));
     VE.soundFrames++;
     VE.silenceFrames = 0;
 
     if (VE.soundFrames >= VE.soundTolerance && !VE.isUserSpeaking) {
       VE.isUserSpeaking = true;
-      console.log('[VAD] User speaking detected');
 
       if (VE.isSpeaking) {
         console.log('[VAD] INTERRUPTING AI!');
-
         VE._speakInterrupted = true;
         VE.isSpeaking = false;
 
-        // ANDROID FIX #1 — also cancel the safety timeout on interrupt
         if (VE._speakTimeoutId) {
           clearTimeout(VE._speakTimeoutId);
           VE._speakTimeoutId = null;
         }
 
         if (VE.synthesis) { VE.synthesis.cancel(); }
+
+        // Lockout: stop VAD for 1.2s to allow audio to clear
+        VE._vadLockoutUntil = Date.now() + 1200;
 
         VE_stopListening();
         VE.currentAnswer = '';
@@ -1521,25 +1525,20 @@ function VE_vadMonitor() {
         }
 
         showToast('Listening...', 'info');
-
         setTimeout(function () {
           VE_setAvatarState('listening');
           VE_startListening();
-        }, 300);
+        }, 500);
       }
     }
   } else {
     VE.soundFrames = 0;
-
     if (VE.isUserSpeaking) {
       VE.silenceFrames++;
-
       if (VE.silenceFrames >= VE.silenceTolerance) {
         var answer = VE.currentAnswer.trim();
         var wordCount = answer.split(/\s+/).filter(function (w) { return w.length > 0; }).length;
-
         if (wordCount >= 2) {
-          console.log('[VAD] Submitting answer after silence');
           VE.isUserSpeaking = false;
           VE.vadActive = false;
           VE_stopVAD();
@@ -1552,7 +1551,6 @@ function VE_vadMonitor() {
       }
     }
   }
-
   VE.vadInterval = requestAnimationFrame(VE_vadMonitor);
 }
 
@@ -1624,8 +1622,7 @@ async function VE_grantAndStart() {
     var constraints = {
       audio: {
         echoCancellation: true,
-        noiseSuppression: true,
-        sampleRate: 16000
+        noiseSuppression: true
       }
     };
     VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
