@@ -1062,6 +1062,7 @@ var VE = {
   vadActive:     false,
   vadInterval:   null,
   noiseThreshold: 0.012,
+  minRms:        0.012,
   silenceFrames: 0,
   soundFrames:   0,
   silenceTolerance: 50,
@@ -1096,6 +1097,7 @@ window.closeVoiceModal = closeVoiceModal;
 
 // ── Complete cleanup ──
 function VE_cleanupAll() {
+  VE_setAvatarState('idle');
   VE_stopVAD();
   VE_stopListening();
   if (VE.synthesis) {
@@ -1166,7 +1168,7 @@ function VE_speak(text, onDone) {
   VE_setAvatarState('speaking');
   VE.isSpeaking = true;
   VE._speakInterrupted = false;
-  VE_stopVAD();
+  VE_startVAD();
   VE_stopListening();
 
   VE_typewriterEffect(text, document.getElementById('vaiSpeechText'));
@@ -1300,25 +1302,26 @@ function VE_startListening() {
     }
   };
 
- VE.recognition.onend = function () {
-
+  VE.recognition.onend = function () {
     console.log('[Voice] Recognition ended');
-
     VE.isListening = false;
 
     var answer = VE.currentAnswer.trim();
-
-    if (answer.length > 0 && !VE.isSpeaking) {
-
-        console.log('[AUTO SUBMIT]', answer);
-
-        VE_submitAnswer();
-
-        return;
+    if (answer.length > 0 && !VE.isSpeaking && VE.state === 'listening') {
+      console.log('[AUTO SUBMIT]', answer);
+      VE_submitAnswer();
+      return;
     }
 
-   
-};
+    if (VE.state === 'listening' && !VE.isSpeaking) {
+      console.log('[Voice] Restarting listening because it ended without submission');
+      setTimeout(function () {
+        if (VE.state === 'listening' && !VE.isSpeaking && !VE.isListening) {
+          VE_startListening();
+        }
+      }, 450);
+    }
+  };
 
   try { VE.recognition.start(); }
   catch (e) {
@@ -1388,7 +1391,22 @@ function VE_vadMonitor() {
   if (VE.rmsHistory.length > VE.rmsHistorySize) VE.rmsHistory.shift();
   var avgRms = VE.rmsHistory.reduce(function (a, b) { return a + b; }, 0) / VE.rmsHistory.length;
 
-  if (avgRms > VE.noiseThreshold) {
+  if (rms > 0.0001) {
+    if (!VE.minRms) {
+      VE.minRms = rms;
+    } else {
+      if (rms < VE.minRms) {
+        VE.minRms = VE.minRms * 0.8 + rms * 0.2;
+      } else {
+        VE.minRms = VE.minRms * 0.999 + rms * 0.001;
+      }
+    }
+  }
+
+  var dynamicThreshold = Math.max(0.022, VE.minRms * 1.6 + 0.008);
+  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 2.2) : dynamicThreshold;
+
+  if (avgRms > currentThreshold) {
     console.log(
     '[VAD]',
     'speaking=', VE.isSpeaking,
@@ -1440,10 +1458,8 @@ function VE_vadMonitor() {
         VE_startListening();
     }, 300);
 
-        showToast('Listening...', 'info');
+        // Duplicate block removed – was redundant after the setTimeout handling above.
 
-        VE_setAvatarState('listening');
-        VE_startListening();
       }
     }
   } else { 
@@ -1490,9 +1506,9 @@ async function VE_submitAnswer() {
   var answer = VE.currentAnswer.trim();
   if (!answer || !VE.interviewId) return;
 
+  VE_setAvatarState('thinking');
   VE_stopListening();
   VE_stopVAD();
-  VE_setAvatarState('thinking');
 
   var transcriptEl = document.getElementById('vuserTranscript');
   if (transcriptEl) transcriptEl.textContent = answer;
@@ -1537,14 +1553,7 @@ async function VE_grantAndStart() {
   }
 
   try { 
-    var constraints = {
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: false,
-        sampleRate: 16000
-      }
-    };
+      var constraints = { audio: true };
     VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log('[Voice] Mic granted');
   } catch (err) {
@@ -1560,7 +1569,8 @@ async function VE_grantAndStart() {
     console.log('[Voice] Interview started:', VE.interviewId);
   } catch (err) {
     setLoading(btn, false);
-    showToast('Start failed.', 'error');
+    console.error('[Voice] Interview start error:', err);
+    showToast('Start failed: ' + (err.message || 'Unknown error'), 'error');
     return;
   }
 

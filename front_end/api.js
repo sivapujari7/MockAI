@@ -19,16 +19,11 @@
 
     if (configuredBase) return normalizeApiBase(configuredBase);
     
-    // Auto-detect same origin API base if served directly by the backend (e.g. localhost:10000)
-  const devPorts = ['5500', '5502', '3000', '5173', '5001', '8080'];
-
 if (isLocalPage()) {
-
-  if (devPorts.includes(window.location.port)) {
-    return LOCAL_API_BASE;
+  if (window.location.port === '10000') {
+    return `${window.location.origin}/api`;
   }
-
-  return `${window.location.origin}/api`;
+  return LOCAL_API_BASE;
 }
 
     return `https://mockai-0b23.onrender.com/api`;

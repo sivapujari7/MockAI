@@ -59,7 +59,14 @@ const allowedOrigins = new Set([...defaultClientUrls, ...envClientUrls]);
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin) || process.env.ALLOW_ANY_ORIGIN === 'true') {
+    if (
+      !origin ||
+      origin === 'null' ||
+      /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+      /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin) ||
+      allowedOrigins.has(origin) ||
+      process.env.ALLOW_ANY_ORIGIN === 'true'
+    ) {
       return callback(null, true);
     }
 
