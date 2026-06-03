@@ -1039,7 +1039,6 @@ function loadSettingsPanel() {
    ✓ Mobile optimized
    ✓ Noise rejection
 ════════════════════════════════════ */
-
 var VE = {
   interviewId:   null,
   recognition:   null,
@@ -1050,27 +1049,32 @@ var VE = {
   source:        null,
   scriptProcessor: null,
   _speakInterrupted: false,
-  
+
+  // ANDROID FIX #1 — track TTS timeout so we can cancel it
+  _speakTimeoutId: null,
+
   state:         'idle',
   isListening:   false,
   isSpeaking:    false,
   isUserSpeaking: false,
-  
+
   currentAnswer: '',
   langMode:      'en-IN',
-  teluguWords:   ['నమస్కారం','మీరు','నేను','ఏమి','అవును','కాదు','చేస్తాను','చేశాను','అని','కానీ'], 
+  teluguWords:   ['నమస్కారం','మీరు','నేను','ఏమి','అవును','కాదు','చేస్తాను','చేశాను','అని','కానీ'],
   vadActive:     false,
   vadInterval:   null,
-  noiseThreshold: 0.012,
-  minRms:        0.012,
-  silenceFrames: 0,
-  soundFrames:   0,
-  silenceTolerance: 50,
-  soundTolerance:  3,
-  rmsHistory:    [],
-  rmsHistorySize: 5,
-  minDecibels:   -100,
-  maxDecibels:   -10,
+
+  // ANDROID FIX #4 — raise thresholds for mobile mic gain
+  noiseThreshold:  0.025,
+  minRms:          0.025,
+  silenceFrames:   0,
+  soundFrames:     0,
+  silenceTolerance: 55,
+  soundTolerance:   5,   // more frames needed before VAD triggers interrupt
+  rmsHistory:      [],
+  rmsHistorySize:  7,    // smoother average on mobile
+  minDecibels:     -100,
+  maxDecibels:     -10,
 };
 
 // ── Open voice modal ──
@@ -1085,12 +1089,12 @@ function closeVoiceModal() {
   VE_cleanupAll();
   var modal = document.getElementById('voiceModal');
   if (modal) modal.classList.remove('open');
-  
+
   var perm = document.getElementById('vScreenPermission');
   var intv = document.getElementById('vScreenInterview');
   if (perm) perm.style.display = '';
   if (intv) intv.style.display = 'none';
-  
+
   VE_setAvatarState('idle');
 }
 window.closeVoiceModal = closeVoiceModal;
@@ -1103,8 +1107,13 @@ function VE_cleanupAll() {
   if (VE.synthesis) {
     try { VE.synthesis.cancel(); } catch (e) {}
   }
+  // ANDROID FIX #1 — clear the TTS safety timeout
+  if (VE._speakTimeoutId) {
+    clearTimeout(VE._speakTimeoutId);
+    VE._speakTimeoutId = null;
+  }
   VE_closeAudio();
-  
+
   if (VE.interviewId && typeof interviewComplete === 'function') {
     interviewComplete(VE.interviewId, 0).catch(function () {});
   }
@@ -1129,12 +1138,8 @@ function VE_closeAudio() {
     try { VE.audioContext.close(); } catch (e) {}
     VE.audioContext = null;
   }
-  if (VE.stream) {
-    try {
-      VE.stream.getTracks().forEach(function (t) { t.stop(); });
-    } catch (e) {}
-    VE.stream = null;
-  }
+  // NOTE: do NOT stop the mic stream here — we reuse it across turns
+  // Stream is only stopped in VE_cleanupAll via the full cleanup path
 }
 
 // ── Avatar state ──
@@ -1143,10 +1148,10 @@ function VE_setAvatarState(state) {
   var wrap = document.getElementById('vaiWrap');
   var status = document.getElementById('vaiStatus');
   if (!wrap) return;
-  
+
   wrap.classList.remove('speaking', 'listening', 'thinking');
   if (state !== 'idle') wrap.classList.add(state);
-  
+
   var labels = {
     idle:      'Ready',
     speaking:  'Priya is speaking…',
@@ -1164,7 +1169,13 @@ function VE_speak(text, onDone) {
   }
 
   VE.synthesis.cancel();
-  
+
+  // ANDROID FIX #1 — clear any previous safety timeout
+  if (VE._speakTimeoutId) {
+    clearTimeout(VE._speakTimeoutId);
+    VE._speakTimeoutId = null;
+  }
+
   VE_setAvatarState('speaking');
   VE.isSpeaking = true;
   VE._speakInterrupted = false;
@@ -1185,25 +1196,39 @@ function VE_speak(text, onDone) {
   });
   if (femaleVoice) utter.voice = femaleVoice;
 
- utter.onend = function () {
+  // ANDROID FIX #1 — shared handler so both onend and the timeout use the same logic
+  function handleSpeechEnd() {
+    // Guard: only run once
+    if (!VE.isSpeaking && !VE._speakTimeoutId) return;
+
+    if (VE._speakTimeoutId) {
+      clearTimeout(VE._speakTimeoutId);
+      VE._speakTimeoutId = null;
+    }
 
     console.log('[Voice] Speech ended, interrupted:', VE._speakInterrupted);
-
     VE.isSpeaking = false;
 
     if (VE._speakInterrupted) {
-        VE._speakInterrupted = false;
-        return;
+      VE._speakInterrupted = false;
+      return;
     }
 
     VE.currentAnswer = '';
-
     VE_setAvatarState('listening');
     VE_startListening();
     VE_startVAD();
-}; 
+    if (onDone) onDone();
+  }
+
+  utter.onend = handleSpeechEnd;
+
   utter.onerror = function (e) {
     console.warn('[Voice] Speech error:', e.error);
+    if (VE._speakTimeoutId) {
+      clearTimeout(VE._speakTimeoutId);
+      VE._speakTimeoutId = null;
+    }
     if (VE._speakInterrupted) return;
     VE.isSpeaking = false;
     VE_startListening();
@@ -1213,6 +1238,17 @@ function VE_speak(text, onDone) {
 
   try {
     VE.synthesis.speak(utter);
+
+    // ANDROID FIX #1 — safety timeout in case onend never fires (Android bug).
+    // Estimate: (word count / 2.5 words-per-second) + 3s buffer, min 5s.
+    var wordCount = text.trim().split(/\s+/).length;
+    var estimatedMs = Math.max(5000, Math.ceil((wordCount / 2.5) * 1000) + 3000);
+    VE._speakTimeoutId = setTimeout(function () {
+      console.warn('[Voice] TTS onend never fired — using timeout fallback');
+      VE._speakTimeoutId = null;
+      handleSpeechEnd();
+    }, estimatedMs);
+
   } catch (e) {
     console.warn('[Voice] Speak failed:', e);
     if (onDone) onDone();
@@ -1234,7 +1270,7 @@ function VE_typewriterEffect(text, el) {
 }
 
 // ── Start Web Speech Recognition ──
-function VE_startListening() { 
+function VE_startListening() {
   var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
     showToast('Speech recognition not supported.', 'warning');
@@ -1249,9 +1285,16 @@ function VE_startListening() {
   }
 
   VE.recognition = new SpeechRecognition();
+
+  // ANDROID FIX #2 — Android Chrome ignores continuous:true and closes after
+  // the first pause anyway. Keep it false (one-shot) and restart in onend.
   VE.recognition.continuous = false;
   VE.recognition.interimResults = false;
   VE.recognition.lang = VE.langMode;
+
+  // ANDROID FIX #2 — longer pause threshold to prevent premature cutoffs
+  // (maxAlternatives is safe to set and has no side-effects)
+  VE.recognition.maxAlternatives = 1;
 
   VE.isListening = true;
 
@@ -1278,8 +1321,8 @@ function VE_startListening() {
     if (finalText) {
       VE.currentAnswer += finalText;
       console.log('[ANSWER]', VE.currentAnswer);
-      var istelugu = VE.teluguWords.some(function (w) { return finalText.includes(w); });
-      if (istelugu) {
+      var isTelugu = VE.teluguWords.some(function (w) { return finalText.includes(w); });
+      if (isTelugu) {
         VE.langMode = 'te-IN';
         var li = document.getElementById('vLangIndicator');
         if (li) li.textContent = '🇮🇳 Telugu';
@@ -1291,15 +1334,18 @@ function VE_startListening() {
   };
 
   VE.recognition.onerror = function (e) {
-    console.warn('[Voice] Error:', e.error);
+    console.warn('[Voice] STT Error:', e.error);
     VE.isListening = false;
-    if (e.error === 'network') {
+
+    // ANDROID FIX #2 — 'network' and 'no-speech' both need a restart
+    if (e.error === 'network' || e.error === 'no-speech' || e.error === 'audio-capture') {
       setTimeout(function () {
         if (!VE.isSpeaking && VE.state === 'listening' && VE.interviewId) {
           VE_startListening();
         }
-      }, 1000);
+      }, 800);
     }
+    // 'aborted' means we stopped it on purpose — don't restart
   };
 
   VE.recognition.onend = function () {
@@ -1313,13 +1359,15 @@ function VE_startListening() {
       return;
     }
 
+    // ANDROID FIX #2 — always restart if we're in listening state; Android
+    // stops recognition after every utterance pause, so we must loop it.
     if (VE.state === 'listening' && !VE.isSpeaking) {
-      console.log('[Voice] Restarting listening because it ended without submission');
       setTimeout(function () {
         if (VE.state === 'listening' && !VE.isSpeaking && !VE.isListening) {
+          console.log('[Voice] Restarting recognition (Android loop)');
           VE_startListening();
         }
-      }, 450);
+      }, 300);
     }
   };
 
@@ -1327,6 +1375,12 @@ function VE_startListening() {
   catch (e) {
     VE.isListening = false;
     console.warn('[Voice] Start failed:', e);
+    // ANDROID FIX #2 — if start() throws, try again after a short delay
+    setTimeout(function () {
+      if (VE.state === 'listening' && !VE.isSpeaking && !VE.isListening) {
+        VE_startListening();
+      }
+    }, 500);
   }
 }
 
@@ -1343,30 +1397,40 @@ function VE_stopListening() {
 function VE_startVAD() {
   console.log('[VAD] START CALLED');
   if (!VE.stream || VE.vadActive) return;
-  
+
   console.log('[VAD] Starting...');
   VE.vadActive = true;
   VE.silenceFrames = 0;
   VE.soundFrames = 0;
   VE.rmsHistory = [];
-  
+
   try {
     var AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
-    
+
     if (VE.audioContext && VE.audioContext.state !== 'closed') {
       try { VE.audioContext.close(); } catch (e) {}
     }
-    
+
     VE.audioContext = new AudioContext();
+
+    // ANDROID FIX #3 — AudioContext may be suspended on mobile;
+    // resume() must be called inside (or shortly after) a user gesture.
+    // VE_grantAndStart is already inside a click handler, so this is safe.
+    if (VE.audioContext.state === 'suspended') {
+      VE.audioContext.resume().then(function () {
+        console.log('[VAD] AudioContext resumed');
+      });
+    }
+
     VE.analyser = VE.audioContext.createAnalyser();
     VE.analyser.fftSize = 512;
     VE.analyser.minDecibels = VE.minDecibels;
     VE.analyser.maxDecibels = VE.maxDecibels;
-    
+
     VE.source = VE.audioContext.createMediaStreamSource(VE.stream);
     VE.source.connect(VE.analyser);
-    
+
     VE_vadMonitor();
   } catch (e) {
     console.warn('[VAD] Init failed:', e);
@@ -1375,8 +1439,13 @@ function VE_startVAD() {
 
 // ── VAD monitoring loop ──
 function VE_vadMonitor() {
-  
   if (!VE.vadActive || !VE.analyser) return;
+
+  // ANDROID FIX #3 — skip frames while AudioContext is suspended
+  if (VE.audioContext && VE.audioContext.state === 'suspended') {
+    VE.vadInterval = requestAnimationFrame(VE_vadMonitor);
+    return;
+  }
 
   var dataArray = new Float32Array(VE.analyser.frequencyBinCount);
   VE.analyser.getFloatTimeDomainData(dataArray);
@@ -1403,15 +1472,13 @@ function VE_vadMonitor() {
     }
   }
 
-  var dynamicThreshold = Math.max(0.022, VE.minRms * 1.6 + 0.008);
-  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 2.2) : dynamicThreshold;
+  // ANDROID FIX #4 — raised multipliers to reduce false triggers from
+  // high-gain mobile mics. Interrupt threshold is now 3x (was 2.2x).
+  var dynamicThreshold = Math.max(0.030, VE.minRms * 1.8 + 0.010);
+  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 3.0) : dynamicThreshold;
 
   if (avgRms > currentThreshold) {
-    console.log(
-    '[VAD]',
-    'speaking=', VE.isSpeaking,
-    'rms=', avgRms.toFixed(4)
-);
+    console.log('[VAD]', 'speaking=', VE.isSpeaking, 'rms=', avgRms.toFixed(4));
     VE.soundFrames++;
     VE.silenceFrames = 0;
 
@@ -1420,49 +1487,41 @@ function VE_vadMonitor() {
       console.log('[VAD] User speaking detected');
 
       if (VE.isSpeaking) {
+        console.log('[VAD] INTERRUPTING AI!');
 
-    console.log('[VAD] INTERRUPTING AI!');
+        VE._speakInterrupted = true;
+        VE.isSpeaking = false;
 
-    VE._speakInterrupted = true;
-    VE.isSpeaking = false;
+        // ANDROID FIX #1 — also cancel the safety timeout on interrupt
+        if (VE._speakTimeoutId) {
+          clearTimeout(VE._speakTimeoutId);
+          VE._speakTimeoutId = null;
+        }
 
-    if (VE.synthesis) {
-        VE.synthesis.cancel();
-    }
+        if (VE.synthesis) { VE.synthesis.cancel(); }
 
-    // Stop any old recognition session
-    VE_stopListening();
+        VE_stopListening();
+        VE.currentAnswer = '';
 
-    // Clear previous answer
-    VE.currentAnswer = '';
+        var fb = document.getElementById('vInterruptionFeedback');
+        if (fb) {
+          fb.style.display = 'flex';
+          fb.style.opacity = '1';
+          setTimeout(function () {
+            fb.style.opacity = '0';
+            setTimeout(function () { fb.style.display = 'none'; }, 300);
+          }, 1200);
+        }
 
-    var fb = document.getElementById('vInterruptionFeedback');
-    if (fb) {
-        fb.style.display = 'flex';
-        fb.style.opacity = '1';
+        showToast('Listening...', 'info');
 
         setTimeout(function () {
-            fb.style.opacity = '0';
-
-            setTimeout(function () {
-                fb.style.display = 'none';
-            }, 300);
-
-        }, 1200);
-    }
-
-    showToast('Listening...', 'info');
-
-    setTimeout(function () {
-        VE_setAvatarState('listening');
-        VE_startListening();
-    }, 300);
-
-        // Duplicate block removed – was redundant after the setTimeout handling above.
-
+          VE_setAvatarState('listening');
+          VE_startListening();
+        }, 300);
       }
     }
-  } else { 
+  } else {
     VE.soundFrames = 0;
 
     if (VE.isUserSpeaking) {
@@ -1474,7 +1533,7 @@ function VE_vadMonitor() {
 
         if (wordCount >= 2) {
           console.log('[VAD] Submitting answer after silence');
-          VE.isUserSpeaking = false; 
+          VE.isUserSpeaking = false;
           VE.vadActive = false;
           VE_stopVAD();
           VE_submitAnswer();
@@ -1552,10 +1611,30 @@ async function VE_grantAndStart() {
     return;
   }
 
-  try { 
-      var constraints = { audio: true };
+  try {
+    // ANDROID FIX #3 — request mic with echoCancellation + noiseSuppression
+    // for better quality on mobile, and keep the stream alive permanently
+    var constraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 16000
+      }
+    };
     VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log('[Voice] Mic granted');
+
+    // ANDROID FIX #3 — create AudioContext immediately inside this click handler
+    // (the gesture context is active right now; if we defer, Android may block it)
+    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      VE.audioContext = new AudioContextClass();
+      if (VE.audioContext.state === 'suspended') {
+        await VE.audioContext.resume();
+      }
+      console.log('[Voice] AudioContext pre-created, state:', VE.audioContext.state);
+    }
+
   } catch (err) {
     setLoading(btn, false);
     console.error('[Voice] Mic error:', err);
@@ -1590,10 +1669,10 @@ async function VE_grantAndStart() {
 function _initVoiceModal() {
   var grantBtn = document.getElementById('vGrantMicBtn');
   if (grantBtn) grantBtn.addEventListener('click', VE_grantAndStart);
-   
+
   var vtypeInput = document.getElementById('vtypeInput');
   var vtypeSend = document.getElementById('vtypeSend');
-  
+
   function submitTyped() {
     var val = vtypeInput && vtypeInput.value.trim();
     if (!val) return;
@@ -1601,7 +1680,7 @@ function _initVoiceModal() {
     VE.currentAnswer = val;
     VE_submitAnswer();
   }
-  
+
   if (vtypeSend) vtypeSend.addEventListener('click', submitTyped);
   if (vtypeInput) vtypeInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); submitTyped(); }
