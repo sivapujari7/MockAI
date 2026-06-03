@@ -1075,6 +1075,7 @@ var VE = {
   rmsHistorySize:  7,    // smoother average on mobile
   minDecibels:     -100,
   maxDecibels:     -10,
+  speakingStartTime: 0,
 };
 
 // ── Open voice modal ──
@@ -1178,6 +1179,7 @@ function VE_speak(text, onDone) {
 
   VE_setAvatarState('speaking');
   VE.isSpeaking = true;
+  VE.speakingStartTime = Date.now();
   VE._speakInterrupted = false;
   VE_startVAD();
   VE_stopListening();
@@ -1473,9 +1475,14 @@ function VE_vadMonitor() {
   }
 
   // ANDROID FIX #4 — raised multipliers to reduce false triggers from
-  // high-gain mobile mics. Interrupt threshold is now 3x (was 2.2x).
+  // high-gain mobile mics. Interrupt threshold is now 5x (was 3x).
   var dynamicThreshold = Math.max(0.030, VE.minRms * 1.8 + 0.010);
-  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 3.0) : dynamicThreshold;
+  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 5.0) : dynamicThreshold;
+
+  // Grace period: ignore interruptions for the first 800ms of AI speech
+  if (VE.isSpeaking && (Date.now() - VE.speakingStartTime < 800)) {
+    currentThreshold = 1.0; // Effectively mute VAD interruptions
+  }
 
   if (avgRms > currentThreshold) {
     console.log('[VAD]', 'speaking=', VE.isSpeaking, 'rms=', avgRms.toFixed(4));
