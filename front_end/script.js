@@ -147,7 +147,7 @@ function _initThreeScene() {
   // Floating particle nodes
   var nodes   = [];
   var nodeGeo = new THREE.SphereGeometry(0.04, 8, 8);
-  var nodeMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.6 });
+  var nodeMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 });
   for (var i = 0; i < 80; i++) {
     var m = new THREE.Mesh(nodeGeo, nodeMat.clone());
     m.position.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8);
@@ -156,20 +156,20 @@ function _initThreeScene() {
     nodes.push(m);
   }
 
-  var lineMat   = new THREE.LineBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.08 });
+  var lineMat   = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.15 });
   var lineGroup = new THREE.Group();
   scene.add(lineGroup);
 
   // Decorative torus rings
-  var torus  = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.008, 16, 120), new THREE.MeshBasicMaterial({ color: 0x6366f1, transparent: true, opacity: 0.12 }));
+  var torus  = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.008, 16, 120), new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.18 }));
   torus.rotation.x = 0.4;
   scene.add(torus);
 
-  var torus2 = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.005, 16, 120), new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.08 }));
+  var torus2 = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.005, 16, 120), new THREE.MeshBasicMaterial({ color: 0x0284c7, transparent: true, opacity: 0.12 }));
   torus2.rotation.x = -0.3; torus2.rotation.y = 0.5;
   scene.add(torus2);
 
-  var ico = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 1), new THREE.MeshBasicMaterial({ color: 0x8b5cf6, wireframe: true, transparent: true, opacity: 0.05 }));
+  var ico = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 1), new THREE.MeshBasicMaterial({ color: 0x818cf8, wireframe: true, transparent: true, opacity: 0.08 }));
   scene.add(ico);
 
   // Subtle mouse parallax
@@ -564,7 +564,9 @@ function updateAuthUI() {
     var navBtn = document.getElementById('navSignIn');
     if (navBtn) {
       navBtn.textContent = (user && user.name) ? ('Hi, ' + user.name.split(' ')[0]) : 'Sign In';
-      navBtn.onclick = loggedIn ? null : function () { openAuthModal('login'); };
+      navBtn.onclick = loggedIn 
+        ? function () { document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' }); }
+        : function () { openAuthModal('login'); };
     }
 
     var ava  = document.getElementById('dashAva');
@@ -1053,6 +1055,7 @@ var VE = {
   // ANDROID FIX #1 — track TTS timeout so we can cancel it
   _speakTimeoutId: null,
   _vadLockoutUntil: 0,
+  speakingStartTime: 0,
 
   state:         'idle',
   isListening:   false,
@@ -1076,7 +1079,6 @@ var VE = {
   rmsHistorySize:  7,    // smoother average on mobile
   minDecibels:     -100,
   maxDecibels:     -10,
-  speakingStartTime: 0,
 };
 
 // ── Open voice modal ──
@@ -1480,12 +1482,12 @@ function VE_vadMonitor() {
     }
   }
 
-  // Mobile-specific high-gain thresholds
-  var dynamicThreshold = Math.max(0.040, VE.minRms * 2.0 + 0.020);
-  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 6.0) : dynamicThreshold;
+  // Mobile-optimized thresholds: Balance between echo-rejection and sensitivity
+  var dynamicThreshold = Math.max(0.020, VE.minRms * 1.5 + 0.010);
+  var currentThreshold = VE.isSpeaking ? (dynamicThreshold * 3.5) : dynamicThreshold;
 
-  // Absolute mute during the first 1s of AI speech to kill "initial burst" loops
-  if (VE.isSpeaking && (Date.now() - VE.speakingStartTime < 1000)) {
+  // Absolute mute during the first 600ms of AI speech to kill "initial burst" loops
+  if (VE.isSpeaking && (Date.now() - VE.speakingStartTime < 600)) {
     currentThreshold = 1.0;
   }
 
@@ -1617,6 +1619,12 @@ async function VE_grantAndStart() {
   }
 
   try {
+    // Primer: Play a silent utterance to unlock SpeechSynthesis on mobile
+    if (VE.synthesis) {
+      var primer = new SpeechSynthesisUtterance('');
+      VE.synthesis.speak(primer);
+    }
+
     // ANDROID FIX #3 — request mic with echoCancellation + noiseSuppression
     // for better quality on mobile, and keep the stream alive permanently
     var constraints = {
@@ -1627,6 +1635,7 @@ async function VE_grantAndStart() {
     };
     VE.stream = await navigator.mediaDevices.getUserMedia(constraints);
     console.log('[Voice] Mic granted');
+
 
     // ANDROID FIX #3 — create AudioContext immediately inside this click handler
     // (the gesture context is active right now; if we defer, Android may block it)
@@ -1706,6 +1715,7 @@ function VE_voiceStart() {
   }
   startVoiceInterview();
 }
+window.VE_voiceStart = VE_voiceStart;
 function _initDashboardTabs() {
   document.querySelectorAll('.dash-tab').forEach(function (tab) {
     tab.addEventListener('click', function () {

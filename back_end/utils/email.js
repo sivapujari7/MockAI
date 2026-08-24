@@ -1,34 +1,63 @@
-const sendEmail = async (to, subject, htmlContent) => {
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'accept': 'application/json',
-      'api-key': process.env.BREVO_API_KEY,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      sender: { name: 'MockAI', email: 'siva9154ss@gmail.com' },
-      to: [{ email: to }],
-      subject: subject,
-      htmlContent: htmlContent,
-    }),
-  });
+const nodemailer = require('nodemailer');
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Brevo API error: ${error}`);
+const sendEmail = async (to, subject, htmlContent) => {
+  // Try Brevo API first
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': process.env.BREVO_API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'MockAI', email: process.env.EMAIL_USER || 'siva9154ss@gmail.com' },
+          to: [{ email: to }],
+          subject: subject,
+          htmlContent: htmlContent,
+        }),
+      });
+
+      if (response.ok) return;
+      console.warn('[Email] Brevo API failed, attempting Nodemailer fallback...');
+    } catch (brevoErr) {
+      console.warn('[Email] Brevo API exception:', brevoErr.message);
+    }
   }
+
+  // Nodemailer fallback
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"MockAI" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html: htmlContent,
+    });
+    return;
+  }
+
+  console.warn('[Email] No working email credentials configured. Email sending skipped.');
 };
+
 // ── Get frontend URL
 const getClientUrl = () => {
   const configuredUrl = process.env.CLIENT_URL;
   if (configuredUrl && !configuredUrl.includes('your-frontend-url.com')) {
     return configuredUrl.trim().replace(/\/+$/, '');
   }
-  return `http://localhost:${process.env.PORT || 5000}`;
+  return `http://localhost:${process.env.PORT || 10000}`;
 };
 
-const getVerificationUrl = (token) => `${getClientUrl()}/verify-email?token=${token}`;
+const getVerificationUrl = (token) => `${getClientUrl()}?token=${token}`;
 
 const emailWrapper = (content) => `
 <!DOCTYPE html>

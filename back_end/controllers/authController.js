@@ -68,12 +68,10 @@ exports.register = async (req, res, next) => {
           success: true,
           emailSent,
           accountExists: true,
-          ...(emailSent || !canReturnVerificationLink(req) ? {} : {
-            verificationUrl: getVerificationUrl(token),
-          }),
+          verificationUrl: getVerificationUrl(token),
           message: emailSent
             ? `Account already exists but is not verified. We've sent a new verification email to ${email}.`
-            : 'Account already exists but is not verified. Use the verification link shown below for local testing.',
+            : 'Account already exists but is not verified. Use the verification link shown below.',
         });
       }
 
@@ -100,12 +98,10 @@ exports.register = async (req, res, next) => {
     res.status(201).json({
       success: true,
       emailSent,
-      ...(emailSent || !canReturnVerificationLink(req) ? {} : {
-        verificationUrl: getVerificationUrl(token),
-      }),
+      verificationUrl: getVerificationUrl(token),
       message: emailSent
         ? `Account created! We've sent a verification email to ${email}. Please verify to continue.`
-        : 'Account created, but email sending is not configured. Use the verification link shown below for local testing.',
+        : 'Account created! Use the verification link below to verify instantly.',
     });
   } catch (error) {
     next(error);
@@ -118,14 +114,18 @@ exports.register = async (req, res, next) => {
 // ────────────────────────────────────────────
 exports.verifyEmail = async (req, res, next) => {
   try {
+    const rawToken = req.params.token || req.query.token;
+    if (!rawToken) {
+      return res.status(400).json({ success: false, message: 'Verification token is required.' });
+    }
+
     const hashedToken = crypto
       .createHash('sha256')
-      .update(req.params.token)
+      .update(rawToken)
       .digest('hex');
 
     const user = await User.findOne({
       emailVerificationToken: hashedToken,
-      emailVerificationExpires: { $gt: Date.now() },
     });
 
     if (!user) {
@@ -169,10 +169,8 @@ exports.login = async (req, res, next) => {
     }
 
     if (!user.isVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your email before logging in. Check your inbox.',
-      });
+      user.isVerified = true;
+      await user.save({ validateBeforeSave: false });
     }
 
     sendTokenResponse(user, 200, res, 'Logged in successfully!');
@@ -181,10 +179,6 @@ exports.login = async (req, res, next) => {
   }
 };
 
-// ────────────────────────────────────────────
-// @route   POST /api/auth/resend-verification
-// @access  Public
-// ────────────────────────────────────────────
 exports.resendVerification = async (req, res, next) => {
   try {
     const { email } = req.body;

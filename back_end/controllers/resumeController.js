@@ -1,4 +1,5 @@
-﻿const mammoth = require('mammoth');
+const mammoth = require('mammoth');
+const Resume = require('../models/Resume');
 const { generateResumeATS } = require('../services/aiResumeService');
 
 exports.uploadResume = async (req, res) => {
@@ -14,15 +15,10 @@ exports.uploadResume = async (req, res) => {
     const isTxt  = req.file.mimetype === 'text/plain' || /\.txt$/i.test(req.file.originalname);
 
     if (isPdf) {
-      // pdf-parse v2 ships the actual parser at this internal path
-      // require('pdf-parse') in v2 returns an object, not a function
-      // We load the underlying function directly to avoid the v2 wrapper issue
       let parser;
       try {
-        // Try the internal path first (works for v2.x)
         parser = require('pdf-parse/lib/pdf-parse.js');
       } catch (_) {
-        // Fallback: v1.x exports the function directly
         const mod = require('pdf-parse');
         parser = typeof mod === 'function' ? mod : mod.default;
       }
@@ -42,7 +38,6 @@ exports.uploadResume = async (req, res) => {
       text = result.value || '';
 
     } else if (isDoc) {
-      // .doc files — mammoth handles some, warn if not
       try {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         text = result.value || '';
@@ -64,7 +59,31 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    const atsResult = await generateResumeATS(text, req.body.targetRole || 'Software Engineer');
+    const targetRole = req.body.targetRole || 'Software Engineer';
+    const atsResult = await generateResumeATS(text, targetRole);
+
+    // Save resume analysis to database if user is authenticated or guest
+    if (req.user && req.user._id) {
+      try {
+        await Resume.create({
+          user: req.user._id,
+          filename: req.file.filename || req.file.originalname,
+          originalName: req.file.originalname,
+          parsedText: text.slice(0, 10000),
+          targetRole,
+          analysis: {
+            atsScore: atsResult.atsScore,
+            keywordsFound: atsResult.skillsFound,
+            keywordsMissing: atsResult.missingSkills,
+            strengthPoints: atsResult.strengths,
+            improvementPoints: atsResult.improvements,
+            summary: atsResult.summary,
+          },
+        });
+      } catch (dbErr) {
+        console.warn('[resumeController] DB save warning:', dbErr.message);
+      }
+    }
 
     return res.json({ success: true, analysis: atsResult });
 
